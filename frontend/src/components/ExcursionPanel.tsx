@@ -633,7 +633,7 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                 const h = 260;
                 const padLeft = 45;
                 const padBottom = 30;
-                const plotW = w - padLeft - 15;
+                const plotW = w - padLeft - 25;
                 const plotH = h - padBottom - 15;
 
                 const zeroY = 15 + plotH * (b.maxRet / (b.maxRet - b.minRet));
@@ -641,6 +641,8 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                   ? (stats()?.optimal_sl_pips || 0)
                   : (isRMode() ? (stats()?.optimal_sl_r || 0) : (stats()?.optimal_sl_amount || 0));
                 const optSLX = padLeft + (optSLVal / b.maxMae) * plotW;
+                const slLabelAnchor = optSLX > (padLeft + plotW - 85) ? 'end' : 'start';
+                const slLabelX = optSLX > (padLeft + plotW - 85) ? optSLX - 5 : optSLX + 4;
 
                 return (
                   <svg viewBox={`0 0 ${w} ${h}`} class="w-full h-full overflow-visible">
@@ -651,7 +653,14 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                     {optSLVal > 0 && optSLX <= padLeft + plotW && (
                       <g>
                         <line x1={optSLX} y1="15" x2={optSLX} y2={15 + plotH} stroke="#10b981" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.7" />
-                        <text x={optSLX + 3} y="25" fill="#10b981" font-size="9" font-family="monospace">
+                        <text
+                          x={slLabelX}
+                          y="25"
+                          fill="#10b981"
+                          font-size="9"
+                          font-family="monospace"
+                          text-anchor={slLabelAnchor}
+                        >
                           90% SL Cutoff
                         </text>
                       </g>
@@ -722,7 +731,7 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                 const h = 260;
                 const padLeft = 45;
                 const padBottom = 30;
-                const plotW = w - padLeft - 15;
+                const plotW = w - padLeft - 25;
                 const plotH = h - padBottom - 15;
 
                 const zeroY = 15 + plotH * (b.maxRet / (b.maxRet - b.minRet));
@@ -737,10 +746,19 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                       const maxDiag = Math.min(b.maxMfe, b.maxRet);
                       const x2 = padLeft + (maxDiag / b.maxMfe) * plotW;
                       const y2 = 15 + plotH * ((b.maxRet - maxDiag) / (b.maxRet - b.minRet));
+                      const labelX = x2 - 8;
+                      const labelY = Math.max(26, y2 - 6);
                       return (
                         <g>
                           <line x1={padLeft} y1={zeroY} x2={x2} y2={y2} stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.6" />
-                          <text x={x2 + 4} y={y2} fill="#38bdf8" font-size="9" font-family="monospace">
+                          <text
+                            x={labelX}
+                            y={labelY}
+                            fill="#38bdf8"
+                            font-size="9"
+                            font-family="monospace"
+                            text-anchor="end"
+                          >
                             y = x (Perfect Exit)
                           </text>
                         </g>
