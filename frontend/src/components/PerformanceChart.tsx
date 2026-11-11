@@ -1,5 +1,13 @@
-import { Component, createSignal, onMount, onCleanup, createEffect } from 'solid-js';
-import { createChart, IChartApi, ISeriesApi, AreaSeries, LineSeries, ColorType } from 'lightweight-charts';
+import { Component, createSignal, onMount, onCleanup, createEffect, Show } from 'solid-js';
+import { 
+  createChart, 
+  IChartApi, 
+  ISeriesApi, 
+  AreaSeries, 
+  LineSeries, 
+  HistogramSeries, 
+  ColorType 
+} from 'lightweight-charts';
 import { CurvePoint, MetricMode } from '../types';
 
 interface PerformanceChartProps {
@@ -12,11 +20,22 @@ type ChartTab = 'growth' | 'balance' | 'profit' | 'drawdown' | 'r';
 export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   let chartContainer: HTMLDivElement | undefined;
   let chart: IChartApi | null = null;
-  let primarySeries: ISeriesApi<any> | null = null;
-  let secondarySeries: ISeriesApi<any> | null = null;
+  
+  // Active series references for dynamic cleanup
+  let seriesList: ISeriesApi<any>[] = [];
 
   const [activeTab, setActiveTab] = createSignal<ChartTab>('growth');
   const [activeTimeframe, setActiveTimeframe] = createSignal<string>('ALL');
+
+  // Series visibility toggles (Myfxbook style)
+  const [showGrowth, setShowGrowth] = createSignal(true);
+  const [showEquityGrowth, setShowEquityGrowth] = createSignal(true);
+  const [showBalance, setShowBalance] = createSignal(true);
+  const [showEquity, setShowEquity] = createSignal(true);
+  const [showProfit, setShowProfit] = createSignal(true);
+  const [showDrawdown, setShowDrawdown] = createSignal(true);
+  const [showRCurve, setShowRCurve] = createSignal(true);
+  const [showChangeBars, setShowChangeBars] = createSignal(true);
 
   // Sync tab with global mode if user changes mode
   createEffect(() => {
@@ -74,17 +93,22 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     updateChartData();
   };
 
+  const clearSeries = () => {
+    if (!chart) return;
+    for (const s of seriesList) {
+      try {
+        chart.removeSeries(s);
+      } catch (e) {
+        // Ignored
+      }
+    }
+    seriesList = [];
+  };
+
   const updateChartData = () => {
     if (!chart || !props.curves || props.curves.length === 0) return;
 
-    if (primarySeries) {
-      chart.removeSeries(primarySeries);
-      primarySeries = null;
-    }
-    if (secondarySeries) {
-      chart.removeSeries(secondarySeries);
-      secondarySeries = null;
-    }
+    clearSeries();
 
     // Filter curves by active timeframe
     let data = [...props.curves];
@@ -105,60 +129,172 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       uniqueMap.set(pt.timestamp, pt);
     }
     const sortedData = Array.from(uniqueMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+    if (!sortedData.length) return;
 
     const tab = activeTab();
 
     if (tab === 'growth') {
-      primarySeries = chart.addSeries(AreaSeries, {
-        topColor: 'rgba(16, 185, 129, 0.4)',
-        bottomColor: 'rgba(16, 185, 129, 0.0)',
-        lineColor: '#10b981',
-        lineWidth: 2,
-        priceFormat: { type: 'percent' },
-      });
-      primarySeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.growth_pct })));
-    } else if (tab === 'balance') {
-      // Balance Curve
-      primarySeries = chart.addSeries(LineSeries, {
-        color: '#3b82f6',
-        lineWidth: 2,
-        title: 'Balance',
-      });
-      primarySeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.balance })));
+      // 1. Change Bars (%)
+      if (showChangeBars()) {
+        const barSeries = chart.addSeries(HistogramSeries, {
+          priceFormat: { type: 'percent' },
+          priceScaleId: 'right',
+          title: 'Change (%)',
+        });
+        barSeries.setData(sortedData.map(d => {
+          const val = d.change_pct ?? 0;
+          return {
+            time: d.timestamp as any,
+            value: val,
+            color: val >= 0 ? 'rgba(16, 185, 129, 0.55)' : 'rgba(244, 63, 94, 0.55)'
+          };
+        }));
+        seriesList.push(barSeries);
+      }
 
-      // Equity Curve
-      secondarySeries = chart.addSeries(LineSeries, {
-        color: '#f59e0b',
-        lineWidth: 2,
-        title: 'Equity',
-      });
-      secondarySeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.equity })));
+      // 2. Growth (%) Area/Line
+      if (showGrowth()) {
+        const growthSeries = chart.addSeries(AreaSeries, {
+          topColor: 'rgba(16, 185, 129, 0.35)',
+          bottomColor: 'rgba(16, 185, 129, 0.0)',
+          lineColor: '#10b981',
+          lineWidth: 2,
+          priceFormat: { type: 'percent' },
+          title: 'Growth',
+        });
+        growthSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.growth_pct })));
+        seriesList.push(growthSeries);
+      }
+
+      // 3. Equity Growth (%)
+      if (showEquityGrowth()) {
+        const equityGrowthSeries = chart.addSeries(LineSeries, {
+          color: '#f59e0b',
+          lineWidth: 2,
+          priceFormat: { type: 'percent' },
+          title: 'Equity Growth',
+        });
+        equityGrowthSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.growth_pct })));
+        seriesList.push(equityGrowthSeries);
+      }
+
+    } else if (tab === 'balance') {
+      // 1. Profit Change Bars ($)
+      if (showChangeBars()) {
+        const barSeries = chart.addSeries(HistogramSeries, {
+          priceScaleId: 'right',
+          title: 'Trade Profit ($)',
+        });
+        barSeries.setData(sortedData.map(d => {
+          const val = d.change_amount ?? 0;
+          return {
+            time: d.timestamp as any,
+            value: val,
+            color: val >= 0 ? 'rgba(16, 185, 129, 0.55)' : 'rgba(244, 63, 94, 0.55)'
+          };
+        }));
+        seriesList.push(barSeries);
+      }
+
+      // 2. Balance Curve
+      if (showBalance()) {
+        const balanceSeries = chart.addSeries(LineSeries, {
+          color: '#3b82f6',
+          lineWidth: 2,
+          title: 'Balance',
+        });
+        balanceSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.balance })));
+        seriesList.push(balanceSeries);
+      }
+
+      // 3. Equity Curve
+      if (showEquity()) {
+        const equitySeries = chart.addSeries(LineSeries, {
+          color: '#f59e0b',
+          lineWidth: 2,
+          title: 'Equity',
+        });
+        equitySeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.equity })));
+        seriesList.push(equitySeries);
+      }
+
     } else if (tab === 'profit') {
-      primarySeries = chart.addSeries(AreaSeries, {
-        topColor: 'rgba(59, 130, 246, 0.35)',
-        bottomColor: 'rgba(59, 130, 246, 0.0)',
-        lineColor: '#3b82f6',
-        lineWidth: 2,
-      });
-      primarySeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.profit })));
+      // 1. Trade Profit Bars ($)
+      if (showChangeBars()) {
+        const barSeries = chart.addSeries(HistogramSeries, {
+          priceScaleId: 'right',
+          title: 'Trade Return ($)',
+        });
+        barSeries.setData(sortedData.map(d => {
+          const val = d.change_amount ?? 0;
+          return {
+            time: d.timestamp as any,
+            value: val,
+            color: val >= 0 ? 'rgba(16, 185, 129, 0.55)' : 'rgba(244, 63, 94, 0.55)'
+          };
+        }));
+        seriesList.push(barSeries);
+      }
+
+      // 2. Cumulative Profit
+      if (showProfit()) {
+        const profitSeries = chart.addSeries(AreaSeries, {
+          topColor: 'rgba(59, 130, 246, 0.35)',
+          bottomColor: 'rgba(59, 130, 246, 0.0)',
+          lineColor: '#3b82f6',
+          lineWidth: 2,
+          title: 'Cumulative Profit',
+        });
+        profitSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.profit })));
+        seriesList.push(profitSeries);
+      }
+
     } else if (tab === 'drawdown') {
-      primarySeries = chart.addSeries(AreaSeries, {
-        topColor: 'rgba(239, 68, 68, 0.0)',
-        bottomColor: 'rgba(239, 68, 68, 0.4)',
-        lineColor: '#ef4444',
-        lineWidth: 2,
-        invertFilledArea: true,
-        priceFormat: { type: 'percent' },
-      });
-      primarySeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: -Math.abs(d.drawdown_pct) })));
+      // Drawdown Curve
+      if (showDrawdown()) {
+        const drawdownSeries = chart.addSeries(AreaSeries, {
+          topColor: 'rgba(239, 68, 68, 0.0)',
+          bottomColor: 'rgba(239, 68, 68, 0.4)',
+          lineColor: '#ef4444',
+          lineWidth: 2,
+          invertFilledArea: true,
+          priceFormat: { type: 'percent' },
+          title: 'Drawdown (%)',
+        });
+        drawdownSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: -Math.abs(d.drawdown_pct) })));
+        seriesList.push(drawdownSeries);
+      }
+
     } else if (tab === 'r') {
-      primarySeries = chart.addSeries(AreaSeries, {
-        topColor: 'rgba(168, 85, 247, 0.4)',
-        bottomColor: 'rgba(168, 85, 247, 0.0)',
-        lineColor: '#a855f7',
-        lineWidth: 2,
-      });
-      primarySeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.cumulative_r })));
+      // 1. R-Multiple Bars
+      if (showChangeBars()) {
+        const barSeries = chart.addSeries(HistogramSeries, {
+          priceScaleId: 'right',
+          title: 'Trade R',
+        });
+        barSeries.setData(sortedData.map(d => {
+          const val = d.change_r ?? 0;
+          return {
+            time: d.timestamp as any,
+            value: val,
+            color: val >= 0 ? 'rgba(168, 85, 247, 0.60)' : 'rgba(244, 63, 94, 0.60)'
+          };
+        }));
+        seriesList.push(barSeries);
+      }
+
+      // 2. Cumulative R
+      if (showRCurve()) {
+        const rSeries = chart.addSeries(AreaSeries, {
+          topColor: 'rgba(168, 85, 247, 0.4)',
+          bottomColor: 'rgba(168, 85, 247, 0.0)',
+          lineColor: '#a855f7',
+          lineWidth: 2,
+          title: 'Cumulative R',
+        });
+        rSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.cumulative_r })));
+        seriesList.push(rSeries);
+      }
     }
 
     chart.timeScale().fitContent();
@@ -181,6 +317,14 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   createEffect(() => {
     activeTab();
     activeTimeframe();
+    showGrowth();
+    showEquityGrowth();
+    showBalance();
+    showEquity();
+    showProfit();
+    showDrawdown();
+    showRCurve();
+    showChangeBars();
     props.curves;
     updateChartData();
   });
@@ -188,12 +332,12 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   return (
     <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl backdrop-blur-sm flex flex-col gap-3">
       
-      {/* Top Header Controls */}
+      {/* Top Header Controls: Views & Timeframe */}
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
         {/* Chart View Tabs */}
         <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
           <button
-            class={`px-3 py-1.2 rounded-lg text-xs font-semibold transition-all ${
+            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeTab() === 'growth' ? 'bg-slate-800 text-emerald-400 shadow' : 'text-slate-400 hover:text-white'
             }`}
             onClick={() => setActiveTab('growth')}
@@ -201,7 +345,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
             Growth (%)
           </button>
           <button
-            class={`px-3 py-1.2 rounded-lg text-xs font-semibold transition-all ${
+            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeTab() === 'balance' ? 'bg-slate-800 text-blue-400 shadow' : 'text-slate-400 hover:text-white'
             }`}
             onClick={() => setActiveTab('balance')}
@@ -209,7 +353,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
             Balance & Equity
           </button>
           <button
-            class={`px-3 py-1.2 rounded-lg text-xs font-semibold transition-all ${
+            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeTab() === 'profit' ? 'bg-slate-800 text-blue-400 shadow' : 'text-slate-400 hover:text-white'
             }`}
             onClick={() => setActiveTab('profit')}
@@ -217,7 +361,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
             Profit ($)
           </button>
           <button
-            class={`px-3 py-1.2 rounded-lg text-xs font-semibold transition-all ${
+            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeTab() === 'drawdown' ? 'bg-slate-800 text-rose-400 shadow' : 'text-slate-400 hover:text-white'
             }`}
             onClick={() => setActiveTab('drawdown')}
@@ -225,7 +369,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
             Drawdown (%)
           </button>
           <button
-            class={`px-3 py-1.2 rounded-lg text-xs font-semibold transition-all ${
+            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeTab() === 'r' ? 'bg-purple-900/50 text-purple-300 border border-purple-500/30 shadow' : 'text-purple-400/80 hover:text-purple-200'
             }`}
             onClick={() => setActiveTab('r')}
@@ -254,8 +398,176 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       {/* Lightweight Chart Canvas Container */}
       <div 
         ref={chartContainer} 
-        class="w-full h-[360px] rounded-xl overflow-hidden relative border border-slate-950 shadow-inner"
+        class="w-full h-[370px] rounded-xl overflow-hidden relative border border-slate-950 shadow-inner"
       />
+
+      {/* Bottom Series Legend Toggles (Authentic Myfxbook Style) */}
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60 text-xs">
+        <div class="flex flex-wrap items-center gap-2">
+          {/* Toggles for Growth View */}
+          <Show when={activeTab() === 'growth'}>
+            <button
+              onClick={() => setShowGrowth(!showGrowth())}
+              class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                showGrowth()
+                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 font-semibold'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+              }`}
+            >
+              <span class={`h-2 w-2 rounded-full ${showGrowth() ? 'bg-emerald-400' : 'bg-slate-600'}`}></span>
+              <span>Growth (%)</span>
+            </button>
+
+            <button
+              onClick={() => setShowEquityGrowth(!showEquityGrowth())}
+              class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                showEquityGrowth()
+                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 font-semibold'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+              }`}
+            >
+              <span class={`h-2 w-2 rounded-full ${showEquityGrowth() ? 'bg-amber-400' : 'bg-slate-600'}`}></span>
+              <span>Equity Growth (%)</span>
+            </button>
+
+            <button
+              onClick={() => setShowChangeBars(!showChangeBars())}
+              class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                showChangeBars()
+                  ? 'bg-blue-500/10 border-blue-500/40 text-blue-300 font-semibold'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+              }`}
+            >
+              <span class="flex items-end gap-0.5 h-3">
+                <span class={`w-1 h-2 rounded-xs ${showChangeBars() ? 'bg-emerald-400' : 'bg-slate-600'}`}></span>
+                <span class={`w-1 h-3 rounded-xs ${showChangeBars() ? 'bg-rose-400' : 'bg-slate-600'}`}></span>
+              </span>
+              <span>Change Bars (%)</span>
+            </button>
+          </Show>
+
+          {/* Toggles for Balance View */}
+          <Show when={activeTab() === 'balance'}>
+            <button
+              onClick={() => setShowBalance(!showBalance())}
+              class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                showBalance()
+                  ? 'bg-blue-500/10 border-blue-500/40 text-blue-400 font-semibold'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+              }`}
+            >
+              <span class={`h-2 w-2 rounded-full ${showBalance() ? 'bg-blue-400' : 'bg-slate-600'}`}></span>
+              <span>Balance</span>
+            </button>
+
+            <button
+              onClick={() => setShowEquity(!showEquity())}
+              class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                showEquity()
+                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 font-semibold'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+              }`}
+            >
+              <span class={`h-2 w-2 rounded-full ${showEquity() ? 'bg-amber-400' : 'bg-slate-600'}`}></span>
+              <span>Equity</span>
+            </button>
+
+            <button
+              onClick={() => setShowChangeBars(!showChangeBars())}
+              class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                showChangeBars()
+                  ? 'bg-blue-500/10 border-blue-500/40 text-blue-300 font-semibold'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+              }`}
+            >
+              <span class="flex items-end gap-0.5 h-3">
+                <span class={`w-1 h-2 rounded-xs ${showChangeBars() ? 'bg-emerald-400' : 'bg-slate-600'}`}></span>
+                <span class={`w-1 h-3 rounded-xs ${showChangeBars() ? 'bg-rose-400' : 'bg-slate-600'}`}></span>
+              </span>
+              <span>Profit Change Bars ($)</span>
+            </button>
+          </Show>
+
+          {/* Toggles for Profit View */}
+          <Show when={activeTab() === 'profit'}>
+            <button
+              onClick={() => setShowProfit(!showProfit())}
+              class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                showProfit()
+                  ? 'bg-blue-500/10 border-blue-500/40 text-blue-400 font-semibold'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+              }`}
+            >
+              <span class={`h-2 w-2 rounded-full ${showProfit() ? 'bg-blue-400' : 'bg-slate-600'}`}></span>
+              <span>Cumulative Profit</span>
+            </button>
+
+            <button
+              onClick={() => setShowChangeBars(!showChangeBars())}
+              class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                showChangeBars()
+                  ? 'bg-blue-500/10 border-blue-500/40 text-blue-300 font-semibold'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+              }`}
+            >
+              <span class="flex items-end gap-0.5 h-3">
+                <span class={`w-1 h-2 rounded-xs ${showChangeBars() ? 'bg-emerald-400' : 'bg-slate-600'}`}></span>
+                <span class={`w-1 h-3 rounded-xs ${showChangeBars() ? 'bg-rose-400' : 'bg-slate-600'}`}></span>
+              </span>
+              <span>Trade Profit Bars ($)</span>
+            </button>
+          </Show>
+
+          {/* Toggles for Drawdown View */}
+          <Show when={activeTab() === 'drawdown'}>
+            <button
+              onClick={() => setShowDrawdown(!showDrawdown())}
+              class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                showDrawdown()
+                  ? 'bg-rose-500/10 border-rose-500/40 text-rose-400 font-semibold'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+              }`}
+            >
+              <span class={`h-2 w-2 rounded-full ${showDrawdown() ? 'bg-rose-400' : 'bg-slate-600'}`}></span>
+              <span>Drawdown (%)</span>
+            </button>
+          </Show>
+
+          {/* Toggles for Van Tharp R-Curve View */}
+          <Show when={activeTab() === 'r'}>
+            <button
+              onClick={() => setShowRCurve(!showRCurve())}
+              class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                showRCurve()
+                  ? 'bg-purple-500/10 border-purple-500/40 text-purple-300 font-semibold'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+              }`}
+            >
+              <span class={`h-2 w-2 rounded-full ${showRCurve() ? 'bg-purple-400' : 'bg-slate-600'}`}></span>
+              <span>Cumulative R</span>
+            </button>
+
+            <button
+              onClick={() => setShowChangeBars(!showChangeBars())}
+              class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                showChangeBars()
+                  ? 'bg-purple-500/10 border-purple-500/40 text-purple-300 font-semibold'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+              }`}
+            >
+              <span class="flex items-end gap-0.5 h-3">
+                <span class={`w-1 h-2 rounded-xs ${showChangeBars() ? 'bg-purple-400' : 'bg-slate-600'}`}></span>
+                <span class={`w-1 h-3 rounded-xs ${showChangeBars() ? 'bg-rose-400' : 'bg-slate-600'}`}></span>
+              </span>
+              <span>R-Multiple Bars</span>
+            </button>
+          </Show>
+        </div>
+
+        <span class="text-[11px] text-slate-500 italic hidden sm:inline">
+          Click series pill to toggle visibility
+        </span>
+      </div>
 
     </div>
   );

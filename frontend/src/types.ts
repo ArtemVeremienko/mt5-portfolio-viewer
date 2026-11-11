@@ -83,6 +83,9 @@ export interface CurvePoint {
   drawdown_pct: number;
   cumulative_r: number;
   r_drawdown: number;
+  change_pct?: number;
+  change_amount?: number;
+  change_r?: number;
 }
 
 export interface MonthInfo {

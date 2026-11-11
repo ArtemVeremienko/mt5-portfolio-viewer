@@ -290,6 +290,10 @@ def process_portfolio_analytics(
         net_deposits = max(1.0, total_deposits - total_withdrawals)
         growth_pct = (cum_profit / net_deposits) * 100.0
 
+        # Periodic change per trade (percentage and dollar)
+        prev_bal = max(1.0, current_run_bal - td["net_profit"])
+        trade_chg_pct = (td["net_profit"] / prev_bal) * 100.0
+
         curves.append({
             "timestamp": td.get("time", 0),
             "balance": round(current_run_bal, 2),
@@ -298,7 +302,10 @@ def process_portfolio_analytics(
             "growth_pct": round(growth_pct, 2),
             "drawdown_pct": round(dd_pct, 2),
             "cumulative_r": round(cum_r, 2),
-            "r_drawdown": round(dd_r, 2)
+            "r_drawdown": round(dd_r, 2),
+            "change_pct": round(trade_chg_pct, 2),
+            "change_amount": round(td["net_profit"], 2),
+            "change_r": round(td["r_multiple"], 2)
         })
 
     # Stats Summary
