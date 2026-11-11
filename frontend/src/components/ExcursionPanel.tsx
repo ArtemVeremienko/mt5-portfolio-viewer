@@ -59,6 +59,21 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
   const isRMode = () => unitMode() === 'auto' && props.mode === 'r';
   const isPipsMode = () => unitMode() === 'pips';
 
+  // Local date/time formatting helpers
+  const formatFullDateTime = (ts: number) => {
+    if (!ts) return '—';
+    const d = new Date(ts * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+
+  const formatShortDateTime = (ts: number) => {
+    if (!ts) return '';
+    const d = new Date(ts * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
   // Value formatters
   const formatExcursion = (pips: number, amt: number, r: number) => {
     if (isPipsMode()) return `${pips.toFixed(1)} pips`;
@@ -837,11 +852,16 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                 'pointer-events': 'none',
                 'z-index': 9999,
               }}
-              class="bg-slate-900/95 border border-slate-700/80 rounded-xl p-3 shadow-2xl text-xs space-y-1.5 w-60 backdrop-blur-md pointer-events-none select-none transition-transform duration-75 ease-out animate-in fade-in"
+              class="bg-slate-900/95 border border-slate-700/80 rounded-xl p-3 shadow-2xl text-xs space-y-1.5 w-72 backdrop-blur-md pointer-events-none select-none transition-transform duration-75 ease-out animate-in fade-in"
             >
-              <div class="flex items-center justify-between border-b border-slate-800 pb-1 font-mono">
-                <span class="font-bold text-white">#{t().ticket} • {t().symbol}</span>
-                <span class={`font-bold px-1.5 py-0.2 rounded text-[10px] ${t().net_profit >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+              <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 font-mono">
+                <div class="flex items-center gap-1.5 overflow-hidden">
+                  <span class="text-slate-200 font-bold">{formatShortDateTime(t().time)}</span>
+                  <span class="text-slate-500 text-[10px]">#{t().ticket}</span>
+                  <span class="text-slate-600">•</span>
+                  <span class="font-bold text-white">{t().symbol}</span>
+                </div>
+                <span class={`font-bold px-1.5 py-0.2 rounded text-[10px] shrink-0 ml-1.5 ${t().net_profit >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
                   {t().type === 0 ? 'BUY' : 'SELL'}
                 </span>
               </div>
@@ -889,14 +909,14 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
         <table class="w-full text-left text-xs">
           <thead>
             <tr class="text-[11px] text-slate-400 border-b border-slate-800">
-              <th class="py-2 px-2">Ticket</th>
-              <th class="py-2 px-2">Symbol</th>
-              <th class="py-2 px-2">Type</th>
-              <th class="py-2 px-2">Realized Return</th>
-              <th class="py-2 px-2">MAE (Drawdown)</th>
-              <th class="py-2 px-2">MFE (Peak Profit)</th>
-              <th class="py-2 px-2 text-right">Intra Ratio</th>
-              <th class="py-2 px-2 text-right">MFE Capture %</th>
+              <th class="py-2.5 px-3">Date & Time / Ticket</th>
+              <th class="py-2.5 px-2">Symbol</th>
+              <th class="py-2.5 px-2">Type</th>
+              <th class="py-2.5 px-2">Realized Return</th>
+              <th class="py-2.5 px-2">MAE (Drawdown)</th>
+              <th class="py-2.5 px-2">MFE (Peak Profit)</th>
+              <th class="py-2.5 px-2 text-right">Intra Ratio</th>
+              <th class="py-2.5 px-2 text-right">MFE Capture %</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-850">
@@ -907,7 +927,10 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                 const ratio = t.mae_amount > 0 ? (t.mfe_amount / t.mae_amount).toFixed(2) : '∞';
                 return (
                   <tr class="hover:bg-slate-850/50 transition-colors">
-                    <td class="py-2 px-2 font-mono text-slate-400">#{t.ticket}</td>
+                    <td class="py-2 px-3 font-mono">
+                      <div class="text-slate-200 font-semibold whitespace-nowrap">{formatFullDateTime(t.time)}</div>
+                      <div class="text-[10px] text-slate-500 font-normal">#{t.ticket}</div>
+                    </td>
                     <td class="py-2 px-2 font-mono font-bold text-white">{t.symbol}</td>
                     <td class="py-2 px-2">
                       <span class={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${t.type === 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
