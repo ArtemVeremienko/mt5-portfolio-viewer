@@ -159,10 +159,10 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
     };
   };
 
-  // Bounds for Chart 3 (MFE vs MAE Quality Matrix) - Auto-fits square to true peak
+  // Bounds for Chart 3 (MFE vs MAE Quality Matrix) - Auto-fits independently on X and Y
   const qualityMatrixBounds = () => {
     const list = trades();
-    if (!list.length) return { maxVal: 1.0, midMae: 0.5, midMfe: 0.5 };
+    if (!list.length) return { maxMae: 1.0, maxMfe: 1.0, midMae: 0.5, midMfe: 0.5 };
     let maxMae = 0.001;
     let maxMfe = 0.001;
     let sumMae = 0;
@@ -176,12 +176,12 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
       sumMfe += mfe;
     }
 
-    const peak = Math.max(maxMae, maxMfe);
-    const maxVal = Math.max(0.01, peak * 1.12);
+    const finalMaxMae = Math.max(0.01, maxMae * 1.15);
+    const finalMaxMfe = Math.max(0.01, maxMfe * 1.15);
     const midMae = sumMae / Math.max(1, list.length);
     const midMfe = sumMfe / Math.max(1, list.length);
 
-    return { maxVal, midMae, midMfe };
+    return { maxMae: finalMaxMae, maxMfe: finalMaxMfe, midMae, midMfe };
   };
 
   // Quadrant Metrics for Trade Quality Matrix
@@ -493,16 +493,17 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
               const h = 340;
               const padLeft = 55;
               const padBottom = 35;
-              const plotW = w - padLeft - 20;
+              const plotW = w - padLeft - 25;
               const plotH = h - padBottom - 20;
 
-              // Diagonal 1:1 line endpoints
-              const diagX2 = padLeft + plotW;
-              const diagY2 = 20; // top right
-
               // Mid divider coordinates
-              const midX = padLeft + (b.midMae / b.maxVal) * plotW;
-              const midY = 20 + plotH * (1 - (b.midMfe / b.maxVal));
+              const midX = padLeft + (b.midMae / b.maxMae) * plotW;
+              const midY = 20 + plotH * (1 - (b.midMfe / b.maxMfe));
+
+              // Diagonal 1:1 line endpoints (MFE = MAE)
+              const diagVal = Math.min(b.maxMae, b.maxMfe);
+              const diagX2 = padLeft + (diagVal / b.maxMae) * plotW;
+              const diagY2 = 20 + plotH * (1 - (diagVal / b.maxMfe));
 
               return (
                 <svg viewBox={`0 0 ${w} ${h}`} class="w-full h-full overflow-visible">
@@ -516,38 +517,46 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                   {/* Bottom-Right: Toxic / Bleeders */}
                   <rect x={midX} y={midY} width={padLeft + plotW - midX} height={20 + plotH - midY} fill="#f43f5e" fill-opacity="0.05" />
 
-                  {/* Quadrant Watermark Labels */}
-                  <g opacity="0.6">
-                    <text x={padLeft + 15} y="40" fill="#10b981" font-size="11" font-weight="bold">
-                      CLEAN / SNIPER ({q.sniperPct}%)
-                    </text>
-                    <text x={padLeft + 15} y="55" fill="#6ee7b7" font-size="9">
-                      Low Drawdown, High Peak Profit
-                    </text>
+                  {/* Non-overlapping Quadrant Badges */}
+                  <g>
+                    {/* Top-Left Badge: Clean / Sniper */}
+                    <g opacity="0.9">
+                      <rect x={padLeft + 10} y="26" width="160" height="30" rx="6" fill="#0b1120" fill-opacity="0.85" stroke="#10b981" stroke-opacity="0.35" stroke-width="1" />
+                      <text x={padLeft + 18} y="40" fill="#10b981" font-size="10" font-weight="bold">CLEAN / SNIPER ({q.sniperPct}%)</text>
+                      <text x={padLeft + 18} y="50" fill="#6ee7b7" font-size="8">Low Drawdown, High Profit</text>
+                    </g>
 
-                    <text x={padLeft + plotW - 15} y="40" fill="#60a5fa" font-size="11" font-weight="bold" text-anchor="end">
-                      ROLLERCOASTER ({((q.rollerCount / trades().length) * 100).toFixed(1)}%)
-                    </text>
-                    <text x={padLeft + plotW - 15} y="55" fill="#93c5fd" font-size="9" text-anchor="end">
-                      High Drawdown, High Potential
-                    </text>
+                    {/* Top-Right Badge: Rollercoaster */}
+                    <g opacity="0.9">
+                      <rect x={padLeft + plotW - 170} y="26" width="165" height="30" rx="6" fill="#0b1120" fill-opacity="0.85" stroke="#3b82f6" stroke-opacity="0.35" stroke-width="1" />
+                      <text x={padLeft + plotW - 162} y="40" fill="#60a5fa" font-size="10" font-weight="bold">ROLLERCOASTER ({((q.rollerCount / Math.max(1, trades().length)) * 100).toFixed(1)}%)</text>
+                      <text x={padLeft + plotW - 162} y="50" fill="#93c5fd" font-size="8">High Drawdown, High Gain</text>
+                    </g>
 
-                    <text x={padLeft + 15} y={20 + plotH - 25} fill="#94a3b8" font-size="11" font-weight="bold">
-                      SCRATCH / NOISE ({((q.scratchCount / trades().length) * 100).toFixed(1)}%)
-                    </text>
+                    {/* Bottom-Left Badge: Scratch / Noise */}
+                    <g opacity="0.9">
+                      <rect x={padLeft + 10} y={20 + plotH - 34} width="160" height="24" rx="6" fill="#0b1120" fill-opacity="0.85" stroke="#64748b" stroke-opacity="0.35" stroke-width="1" />
+                      <text x={padLeft + 18} y={20 + plotH - 18} fill="#94a3b8" font-size="10" font-weight="bold">SCRATCH / NOISE ({((q.scratchCount / Math.max(1, trades().length)) * 100).toFixed(1)}%)</text>
+                    </g>
 
-                    <text x={padLeft + plotW - 15} y={20 + plotH - 25} fill="#f43f5e" font-size="11" font-weight="bold" text-anchor="end">
-                      TOXIC / BLEEDERS ({q.toxicPct}%)
-                    </text>
-                    <text x={padLeft + plotW - 15} y={20 + plotH - 10} fill="#fda4af" font-size="9" text-anchor="end">
-                      Severe Drawdown, Zero Upside
-                    </text>
+                    {/* Bottom-Right Badge: Toxic / Bleeders */}
+                    <g opacity="0.9">
+                      <rect x={padLeft + plotW - 170} y={20 + plotH - 34} width="165" height="24" rx="6" fill="#0b1120" fill-opacity="0.85" stroke="#f43f5e" stroke-opacity="0.35" stroke-width="1" />
+                      <text x={padLeft + plotW - 162} y={20 + plotH - 18} fill="#f43f5e" font-size="10" font-weight="bold">TOXIC / BLEEDERS ({q.toxicPct}%)</text>
+                    </g>
                   </g>
 
                   {/* 1:1 Diagonal Line (MFE = MAE) */}
                   <line x1={padLeft} y1={20 + plotH} x2={diagX2} y2={diagY2} stroke="#c084fc" stroke-width="1.8" stroke-dasharray="4 4" opacity="0.8" />
-                  <text x={diagX2 - 10} y={diagY2 + 15} fill="#c084fc" font-size="10" font-family="monospace" text-anchor="end">
-                    y = x (MFE = MAE)
+                  <text
+                    x={diagX2 - 8}
+                    y={Math.max(30, diagY2 - 8)}
+                    fill="#c084fc"
+                    font-size="9"
+                    font-family="monospace"
+                    text-anchor="end"
+                  >
+                    y = x (1:1 Ratio)
                   </text>
 
                   {/* Dynamic Average Dividers */}
@@ -562,8 +571,8 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                   <For each={trades()}>
                     {(t) => {
                       const { mae, mfe } = getTradeValues(t);
-                      const cx = padLeft + (mae / b.maxVal) * plotW;
-                      const cy = 20 + plotH * (1 - (mfe / b.maxVal));
+                      const cx = padLeft + (mae / b.maxMae) * plotW;
+                      const cy = 20 + plotH * (1 - (mfe / b.maxMfe));
                       const isFavorable = mfe >= mae;
                       const isHovered = () => hoveredTrade()?.ticket === t.ticket;
 
@@ -594,10 +603,10 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                   {/* Axis Labels */}
                   <text x={padLeft} y={20 + plotH + 20} fill="#64748b" font-size="10">0</text>
                   <text x={padLeft + plotW} y={20 + plotH + 20} fill="#64748b" font-size="10" text-anchor="end">
-                    {formatAxisNum(b.maxVal)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MAE Drawdown)
+                    {formatAxisNum(b.maxMae)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MAE Drawdown)
                   </text>
                   <text x={padLeft - 10} y="25" fill="#64748b" font-size="10" text-anchor="end">
-                    {formatAxisNum(b.maxVal)}
+                    {formatAxisNum(b.maxMfe)}
                   </text>
                   <text x={padLeft - 10} y={20 + plotH} fill="#64748b" font-size="10" text-anchor="end">
                     0 (MFE)
