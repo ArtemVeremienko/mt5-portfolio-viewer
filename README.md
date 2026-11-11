@@ -111,3 +111,9 @@ Detailed architectural specifications and engineering guides are available in th
 - **[Frontend Architecture](./specs/frontend.md)**: Solid.js components, Lightweight Charts split scaling, and reactivity models.
 - **[MT5 Domain Quirks](./specs/mt5-quirks.md)**: Position orders vs closing deals, deal direction inversion, index CFD point valuation, and breakeven trade handling.
 - **[AI Agent Handbook (AGENTS.md)](./AGENTS.md)**: Operational guide and best practices for AI agents working in this repository.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
