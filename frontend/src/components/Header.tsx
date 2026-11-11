@@ -1,5 +1,5 @@
 import { Component, For, Show } from 'solid-js';
-import { MetricMode, AccountInfo } from '../types';
+import { MetricMode, TradeScope, AccountInfo } from '../types';
 import { 
   RefreshCw, 
   Activity, 
@@ -8,7 +8,8 @@ import {
   Layers, 
   DollarSign, 
   Percent, 
-  TrendingUp 
+  TrendingUp,
+  History
 } from 'lucide-solid';
 
 interface HeaderProps {
@@ -18,9 +19,12 @@ interface HeaderProps {
   isMt5Connected: boolean;
   isWsConnected: boolean;
   mode: MetricMode;
+  tradeScope: TradeScope;
+  availableTrades: number;
   isSyncing: boolean;
   onSelectAccount: (login: number) => void;
   onSelectMode: (mode: MetricMode) => void;
+  onSelectTradeScope: (scope: TradeScope) => void;
   onSync: () => void;
 }
 
@@ -64,46 +68,79 @@ export const Header: Component<HeaderProps> = (props) => {
           </div>
         </div>
 
-        {/* Center: Metric Mode Switcher */}
-        <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
-          <button
-            class={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              props.mode === 'currency'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-            }`}
-            onClick={() => props.onSelectMode('currency')}
-          >
-            <DollarSign size={14} />
-            <span>Profit ($)</span>
-          </button>
-          
-          <button
-            class={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              props.mode === 'pct'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-            }`}
-            onClick={() => props.onSelectMode('pct')}
-          >
-            <Percent size={14} />
-            <span>Gain (%)</span>
-          </button>
+        {/* Center: Controls Group (Metric Mode + Global Trade Scope) */}
+        <div class="flex flex-wrap items-center gap-2.5">
+          {/* Metric Mode Switcher */}
+          <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
+            <button
+              class={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                props.mode === 'currency'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+              onClick={() => props.onSelectMode('currency')}
+            >
+              <DollarSign size={14} />
+              <span>Profit ($)</span>
+            </button>
+            
+            <button
+              class={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                props.mode === 'pct'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+              onClick={() => props.onSelectMode('pct')}
+            >
+              <Percent size={14} />
+              <span>Gain (%)</span>
+            </button>
 
-          <button
-            class={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              props.mode === 'r'
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/30 ring-1 ring-purple-400/30'
-                : 'text-purple-300 hover:text-purple-100 hover:bg-slate-900'
-            }`}
-            onClick={() => props.onSelectMode('r')}
-          >
-            <TrendingUp size={14} />
-            <span>Van Tharp (R)</span>
-            <span class="text-[9px] bg-purple-950/80 text-purple-200 px-1 py-0.2 rounded border border-purple-500/30">
-              SQN
-            </span>
-          </button>
+            <button
+              class={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                props.mode === 'r'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/30 ring-1 ring-purple-400/30'
+                  : 'text-purple-300 hover:text-purple-100 hover:bg-slate-900'
+              }`}
+              onClick={() => props.onSelectMode('r')}
+            >
+              <TrendingUp size={14} />
+              <span>Van Tharp (R)</span>
+              <span class="text-[9px] bg-purple-950/80 text-purple-200 px-1 py-0.2 rounded border border-purple-500/30">
+                SQN
+              </span>
+            </button>
+          </div>
+
+          {/* Global Trade Scope Filter */}
+          <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner text-xs">
+            <button
+              class={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${
+                props.tradeScope === 'all'
+                  ? 'bg-slate-800 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              onClick={() => props.onSelectTradeScope('all')}
+              title="Analyze all historical trades"
+            >
+              All Trades ({props.availableTrades})
+            </button>
+            <button
+              class={`px-2.5 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 ${
+                props.tradeScope === 'last100'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-purple-300 hover:text-white'
+              }`}
+              onClick={() => props.onSelectTradeScope('last100')}
+              title={props.availableTrades < 100 ? `Current sample has ${props.availableTrades} trades (< 100 benchmark)` : 'Isolate performance strictly to the last 100 trades'}
+            >
+              <History size={12} />
+              <span>Last 100</span>
+              <span class="text-[10px] px-1 py-0.2 rounded bg-black/40 font-mono text-purple-200">
+                {Math.min(100, props.availableTrades)}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Right: MT5 Connection Status & Sync Button */}

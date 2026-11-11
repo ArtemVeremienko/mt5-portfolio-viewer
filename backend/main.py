@@ -127,7 +127,8 @@ def trigger_sync():
 def get_portfolio(
     start_time: Optional[int] = Query(None),
     end_time: Optional[int] = Query(None),
-    risk_pct: Optional[float] = Query(0.01)
+    risk_pct: Optional[float] = Query(0.01),
+    scope: Optional[str] = Query("all")
 ):
     global CURRENT_ACTIVE_LOGIN
     if CURRENT_ACTIVE_LOGIN is None:
@@ -151,7 +152,8 @@ def get_portfolio(
         current_account=acc,
         start_time=start_time,
         end_time=end_time,
-        default_risk_pct=risk_pct or 0.01
+        default_risk_pct=risk_pct or 0.01,
+        trade_scope=scope or "all"
     )
     return analytics_result
 

@@ -1,6 +1,7 @@
 import { Component, createSignal, onMount, onCleanup, Show } from 'solid-js';
 import { 
   MetricMode, 
+  TradeScope,
   AccountInfo, 
   PortfolioData, 
   OpenPosition 
@@ -23,6 +24,7 @@ import {
 
 export const App: Component = () => {
   const [metricMode, setMetricMode] = createSignal<MetricMode>('currency');
+  const [tradeScope, setTradeScope] = createSignal<TradeScope>('all');
   const [accounts, setAccounts] = createSignal<AccountInfo[]>([]);
   const [activeLogin, setActiveLogin] = createSignal<number | null>(null);
   const [portfolioData, setPortfolioData] = createSignal<PortfolioData | null>(null);
@@ -49,9 +51,11 @@ export const App: Component = () => {
     }
   };
 
-  const fetchPortfolio = async () => {
+  const fetchPortfolio = async (overrideScope?: TradeScope) => {
     try {
-      const res = await fetch('/api/portfolio');
+      const scopeVal = overrideScope || tradeScope();
+      const scopeParam = scopeVal === 'last100' ? '?scope=last100' : '';
+      const res = await fetch(`/api/portfolio${scopeParam}`);
       if (res.ok) {
         const data: PortfolioData = await res.json();
         setPortfolioData(data);
@@ -187,6 +191,8 @@ export const App: Component = () => {
         isMt5Connected={isMt5Connected()}
         isWsConnected={isWsConnected()}
         mode={metricMode()}
+        tradeScope={tradeScope()}
+        availableTrades={portfolioData()?.stats?.available_closed_trades || portfolioData()?.stats?.total_trades || 0}
         isSyncing={isSyncing()}
         onSelectAccount={handleSelectAccount}
         onSelectMode={(m) => {
@@ -194,6 +200,10 @@ export const App: Component = () => {
           if (m === 'r' && mainTab() === 'overview') {
             setMainTab('vantharp');
           }
+        }}
+        onSelectTradeScope={(scope) => {
+          setTradeScope(scope);
+          fetchPortfolio(scope);
         }}
         onSync={handleSync}
       />

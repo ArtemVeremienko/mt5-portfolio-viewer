@@ -77,7 +77,8 @@ def process_portfolio_analytics(
     current_account: Dict[str, Any],
     start_time: Optional[int] = None,
     end_time: Optional[int] = None,
-    default_risk_pct: float = 0.01
+    default_risk_pct: float = 0.01,
+    trade_scope: str = "all"
 ) -> Dict[str, Any]:
     """
     Computes comprehensive Myfxbook performance statistics and Van Tharp R-Multiple analytics.
@@ -164,6 +165,16 @@ def process_portfolio_analytics(
 
     # Sort sequentially by time
     filtered_deals.sort(key=lambda x: (x.get("time", 0), x.get("time_msc", 0)))
+
+    # Count total available closed trades in the window
+    all_closed_deals = [x for x in filtered_deals if x.get("entry") in (1, 2) and x.get("type") in (0, 1)]
+    available_closed_count = len(all_closed_deals)
+
+    # Apply Trade Scope filter (e.g. last 100 closed trades)
+    if trade_scope == "last100" and available_closed_count > 0:
+        target_closed_tickets = set(x["ticket"] for x in all_closed_deals[-100:])
+        # Retain cashflow balance operations (type == 2) and the selected 100 closed trades
+        filtered_deals = [x for x in filtered_deals if x.get("type") == 2 or x.get("ticket") in target_closed_tickets]
 
     # Track running balance & cash deposits/withdrawals
     running_balance = 0.0
@@ -326,7 +337,9 @@ def process_portfolio_analytics(
         r_array = np.array(r_multiples)
         avg_r = float(np.mean(r_array))
         std_r = float(np.std(r_array, ddof=1)) if len(r_array) > 1 else 0.001
-        sqn = float((avg_r / std_r) * math.sqrt(len(r_array))) if std_r > 0 else 0.0
+        # Standardized Tharp SQN: multiplier capped at sqrt(100) = 10.0 for > 100 trades
+        multiplier = min(10.0, math.sqrt(len(r_array)))
+        sqn = float((avg_r / std_r) * multiplier) if std_r > 0 else 0.0
         
         winning_r = [r for r in r_multiples if r > 0]
         losing_r = [r for r in r_multiples if r < 0]
@@ -575,6 +588,13 @@ def process_portfolio_analytics(
             "avg_loss_r": round(avg_loss_r, 2),
             "best_trade_r": round(best_trade_r, 2),
             "worst_trade_r": round(worst_trade_r, 2),
+            # Sample Size & Scope
+            "is_sample_developing": total_trades < 30,
+            "sample_trades": total_trades,
+            "min_sample_target": 30,
+            "benchmark_target": 100,
+            "trade_scope": trade_scope,
+            "available_closed_trades": available_closed_count,
         },
         "curves": curves,
         "monthly_matrix": monthly_matrix,

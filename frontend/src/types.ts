@@ -1,4 +1,5 @@
 export type MetricMode = 'currency' | 'pct' | 'r';
+export type TradeScope = 'all' | 'last100';
 
 export interface AccountInfo {
   login: number;
@@ -64,6 +65,13 @@ export interface PortfolioStats {
   avg_loss_r: number;
   best_trade_r: number;
   worst_trade_r: number;
+  // Sample Size & Scope
+  is_sample_developing?: boolean;
+  sample_trades?: number;
+  min_sample_target?: number;
+  benchmark_target?: number;
+  trade_scope?: string;
+  available_closed_trades?: number;
 }
 
 export interface CurvePoint {

@@ -1,6 +1,6 @@
-import { Component, For } from 'solid-js';
+import { Component, For, Show } from 'solid-js';
 import { PortfolioStats, RDistributionBucket } from '../types';
-import { Award, Target, BarChart3, HelpCircle, CheckCircle } from 'lucide-solid';
+import { Award, Target, BarChart3, HelpCircle, CheckCircle, AlertTriangle } from 'lucide-solid';
 
 interface VanTharpPanelProps {
   stats: PortfolioStats | null;
@@ -53,16 +53,45 @@ export const VanTharpPanel: Component<VanTharpPanelProps> = (props) => {
             <Award size={96} />
           </div>
           <div>
-            <span class="text-xs text-purple-300 font-semibold uppercase tracking-wider">System Quality Number (SQN)</span>
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-purple-300 font-semibold uppercase tracking-wider">System Quality Number (SQN)</span>
+              <Show when={(s()?.total_trades || 0) < 30}>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center gap-1">
+                  <AlertTriangle size={11} />
+                  <span>Small Sample</span>
+                </span>
+              </Show>
+            </div>
             <div class="flex items-baseline gap-2 mt-2">
               <span class="text-3xl font-black text-white">{s()?.sqn?.toFixed(2) || '0.00'}</span>
               <span class={`text-xs font-bold px-2 py-0.5 rounded-full border ${s()?.sqn_rating?.badge || 'border-slate-700 text-slate-300'}`}>
                 {s()?.sqn_rating?.category || 'Calculating'}
               </span>
             </div>
+
+            {/* Developing Sample Notice & Mini Progress Bar */}
+            <Show when={(s()?.total_trades || 0) < 30}>
+              <div class="mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-left">
+                <div class="flex items-center justify-between text-[11px] font-semibold text-amber-400 mb-1">
+                  <span>Sample Size: {s()?.total_trades || 0} / 30 trades</span>
+                  <span class="text-[10px] text-amber-300 font-mono">
+                    {Math.round(((s()?.total_trades || 0) / 30) * 100)}%
+                  </span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div 
+                    class="h-full bg-amber-400 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, ((s()?.total_trades || 0) / 30) * 100)}%` }}
+                  />
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                  Statistical confidence requires 30+ trades. Van Tharp benchmarks standardize at 100 trades; current small sample penalizes score via √N ({Math.sqrt(s()?.total_trades || 0).toFixed(2)} vs 10.0 benchmark).
+                </p>
+              </div>
+            </Show>
           </div>
           <p class="text-[11px] text-slate-400 mt-3">
-            Formula: <span class="font-mono text-purple-300">(R̄ / σR) × √N</span>. Evaluates expectancy consistency across {s()?.total_trades || 0} trades.
+            Formula: <span class="font-mono text-purple-300">(R̄ / σR) × min(10, √N)</span>. Consistency across {s()?.total_trades || 0} trades.
           </p>
         </div>
 
