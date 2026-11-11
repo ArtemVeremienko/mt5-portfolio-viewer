@@ -32,6 +32,33 @@ def test_compute_1r_risk_without_sl():
     risk = compute_1r_risk(deal_no_sl, balance_at_entry=10000.0, default_risk_pct=0.01)
     assert risk == 100.0
 
+def test_compute_1r_risk_micro_account():
+    # Micro account $25 balance with DE40 trade
+    deal_micro = {
+        "open_price": 26524.8,
+        "sl": 26504.8, # 20 points
+        "type": 0, # BUY
+        "volume": 0.01,
+        "symbol": ".DE40Cash",
+        "price": 26545.0, # +20.2 points
+        "profit": 0.22
+    }
+    risk = compute_1r_risk(deal_micro, balance_at_entry=24.77, default_risk_pct=0.01)
+    assert 0.15 <= risk <= 0.25 # Around $0.22, definitely not $10!
+    
+    # Micro fallback when SL is 0
+    deal_no_sl = {
+        "open_price": 26524.8,
+        "sl": 0.0,
+        "type": 0,
+        "volume": 0.01,
+        "symbol": ".DE40Cash",
+        "price": 26545.0,
+        "profit": 0.22
+    }
+    fallback_risk = compute_1r_risk(deal_no_sl, balance_at_entry=24.77, default_risk_pct=0.01)
+    assert fallback_risk < 1.0 # Realistic micro floor (~0.25)
+
 def test_sqn_rating():
     rating_poor = get_sqn_rating(1.2)
     assert rating_poor["category"] == "Poor"

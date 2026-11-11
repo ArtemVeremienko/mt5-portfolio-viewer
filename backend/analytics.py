@@ -7,46 +7,52 @@ import pandas as pd
 def compute_1r_risk(deal: Dict[str, Any], balance_at_entry: float, default_risk_pct: float = 0.01) -> float:
     """
     Computes 1R (initial risk in account currency) for a trade.
+    If deal has an explicitly computed risk_r (> 0.01), reuse it.
     If deal has a valid Stop Loss (sl), calculate risk from entry distance.
-    Otherwise, fall back to default_risk_pct of account balance at entry (min 10.0 currency units).
+    Otherwise, fall back to default_risk_pct of account balance at entry (min 0.10 currency units for micro accounts).
     """
+    existing_risk = deal.get("risk_r", 0.0)
+    if existing_risk and float(existing_risk) > 0.01:
+        return round(float(existing_risk), 2)
+
     open_price = deal.get("open_price", 0.0) or deal.get("price", 0.0)
     sl = deal.get("sl", 0.0)
-    deal_type = deal.get("type", 0) # 0=BUY, 1=SELL
     volume = deal.get("volume", 0.01)
     
     # Check if a valid SL was set
     valid_sl = False
-    if sl and sl > 0:
-        if deal_type == 0 and sl < open_price: # BUY: SL below entry
+    diff = 0.0
+    if sl and sl > 0 and open_price > 0:
+        diff = abs(open_price - sl)
+        if diff > 1e-6:
             valid_sl = True
-            diff = open_price - sl
-        elif deal_type == 1 and sl > open_price: # SELL: SL above entry
-            valid_sl = True
-            diff = sl - open_price
             
     if valid_sl and open_price > 0:
-        # If profit and close price exist, we can derive exact pip value or tick value
+        # If profit and close price exist, derive exact per-point value
         close_price = deal.get("price", 0.0)
         net_profit = deal.get("profit", 0.0)
         price_diff = abs(close_price - open_price)
         if price_diff > 1e-6 and abs(net_profit) > 1e-4:
-            # Derived per-point value = abs(net_profit) / price_diff
             val_per_point = abs(net_profit) / price_diff
             risk = diff * val_per_point
             if risk > 0.01:
                 return round(risk, 2)
-        # Fallback approximation for standard forex lot size
+        # Fallback approximation for standard forex lot size or indices
         symbol = str(deal.get("symbol", "")).upper()
-        contract_size = 100000.0 if any(c in symbol for c in ["EUR", "USD", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD"]) else 100.0
-        derived_risk = diff * volume * contract_size
         if "JPY" in symbol:
-            derived_risk /= 150.0 # Approximate conversion if JPY cross
-        if derived_risk > 0.1:
+            derived_risk = (diff / 0.01) * volume * 1000.0 / 150.0
+        elif any(c in symbol for c in ["EUR", "USD", "GBP", "CHF", "AUD", "NZD", "CAD"]):
+            derived_risk = diff * volume * 100000.0
+        elif "XAU" in symbol:
+            derived_risk = diff * volume * 100.0
+        else:
+            # Indices like DE40, US500
+            derived_risk = diff * volume * 1.1
+        if derived_risk > 0.01:
             return round(derived_risk, 2)
 
-    # Fallback: Van Tharp fixed % risk model (e.g. 1% of balance at entry)
-    fallback_risk = max(10.0, balance_at_entry * default_risk_pct)
+    # Fallback: Van Tharp fixed % risk model (e.g. 1% of balance at entry, floor $0.10 for micro accounts)
+    fallback_risk = max(0.10, balance_at_entry * default_risk_pct)
     return round(fallback_risk, 2)
 
 
@@ -190,7 +196,7 @@ def process_portfolio_analytics(
             entry = d.get("entry", 1) # 1=OUT (close), 0=IN, 2=INOUT
             if entry in [1, 2]: # Out / Close deal
                 # Calculate 1R initial risk
-                risk_1r = compute_1r_risk(d, max(100.0, running_balance), default_risk_pct)
+                risk_1r = compute_1r_risk(d, max(1.0, running_balance), default_risk_pct)
                 r_mult = round(net_trade_profit / risk_1r, 3) if risk_1r > 0 else 0.0
                 
                 mae_amt = float(d.get("mae_amount", 0.0) or 0.0)

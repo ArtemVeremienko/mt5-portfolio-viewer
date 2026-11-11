@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import random
 from datetime import datetime, timezone, timedelta
@@ -198,31 +199,114 @@ class MT5Service:
             deals = mt5.history_deals_get(from_dt, to_dt)
             if deals is not None:
                 res = []
-                # Map orders to get initial SL/TP and setup time
-                orders_map = {}
                 history_orders = mt5.history_orders_get(from_dt, to_dt)
+
+                # Map opening deals (DEAL_ENTRY_IN) by position_id to get true entry price, time, and position type (0=BUY, 1=SELL)
+                deals_in_map = {}
+                for d in deals:
+                    if d.entry == 0 and d.position_id > 0:
+                        deals_in_map[d.position_id] = d
+
+                # Group orders by position_id and ticket to recover opening SL/TP
+                orders_by_pid: Dict[int, List[Any]] = {}
+                orders_by_ticket: Dict[int, Any] = {}
                 if history_orders is not None:
                     for o in history_orders:
-                        orders_map[o.ticket] = (o.price_open, o.sl, o.tp, o.time_setup or o.time_done)
+                        orders_by_ticket[o.ticket] = o
+                        if o.position_id > 0:
+                            orders_by_pid.setdefault(o.position_id, []).append(o)
 
                 acc_login = self.active_account_id or 0
                 for d in deals:
+                    # Balance operations (d.type == 2)
+                    if d.type == 2:
+                        res.append({
+                            "ticket": d.ticket,
+                            "order_id": d.order,
+                            "account_id": acc_login,
+                            "time": d.time,
+                            "time_msc": d.time_msc,
+                            "type": d.type,
+                            "entry": d.entry,
+                            "symbol": "",
+                            "volume": 0.0,
+                            "price": 0.0,
+                            "profit": round(d.profit, 2),
+                            "swap": 0.0,
+                            "commission": 0.0,
+                            "sl": 0.0,
+                            "tp": 0.0,
+                            "open_time": d.time,
+                            "open_price": 0.0,
+                            "comment": d.comment or "",
+                            "risk_r": 0.0,
+                            "r_multiple": 0.0,
+                            "mae_price": 0.0,
+                            "mfe_price": 0.0,
+                            "mae_pips": 0.0,
+                            "mfe_pips": 0.0,
+                            "mae_amount": 0.0,
+                            "mfe_amount": 0.0,
+                            "mae_r": 0.0,
+                            "mfe_r": 0.0
+                        })
+                        continue
+
+                    # Trade deal: locate opening deal
+                    pid = d.position_id
+                    d_in = deals_in_map.get(pid)
+                    
+                    # True trade position direction:
+                    # In MT5, an OUT deal on a BUY position has type=DEAL_TYPE_SELL (1).
+                    # If d_in is present, d_in.type is the position direction (0=BUY, 1=SELL).
+                    if d_in is not None:
+                        pos_type = d_in.type
+                        open_price_val = d_in.price
+                        open_time_val = d_in.time
+                    elif d.entry in [1, 2]:
+                        pos_type = 0 if d.type == 1 else 1
+                        open_price_val = d.price
+                        open_time_val = d.time
+                    else:
+                        pos_type = d.type
+                        open_price_val = d.price
+                        open_time_val = d.time
+
+                    # Recover position's Stop Loss and Take Profit
                     sl_val = 0.0
                     tp_val = 0.0
-                    open_price_val = d.price
-                    open_time_val = d.time
-                    if d.order in orders_map:
-                        op, sl_val, tp_val, op_time = orders_map[d.order]
-                        if op > 0:
-                            open_price_val = op
-                        if op_time > 0:
-                            open_time_val = op_time
+                    pos_orders = orders_by_pid.get(pid, [])
+                    # Prefer opening order's SL/TP
+                    for o in pos_orders:
+                        if o.sl > 0 and sl_val == 0.0:
+                            sl_val = o.sl
+                        if o.tp > 0 and tp_val == 0.0:
+                            tp_val = o.tp
+                        # Also parse trailing stop / TP execution from comment if sl is 0
+                        if sl_val == 0.0 and o.comment:
+                            m_sl = re.search(r'\[sl\s+([\d\.]+)\]', o.comment)
+                            if m_sl:
+                                sl_val = float(m_sl.group(1))
+                        if tp_val == 0.0 and o.comment:
+                            m_tp = re.search(r'\[tp\s+([\d\.]+)\]', o.comment)
+                            if m_tp:
+                                tp_val = float(m_tp.group(1))
 
+                    if sl_val == 0.0 and d.comment:
+                        m_sl = re.search(r'\[sl\s+([\d\.]+)\]', d.comment)
+                        if m_sl:
+                            sl_val = float(m_sl.group(1))
+                    if tp_val == 0.0 and d.comment:
+                        m_tp = re.search(r'\[tp\s+([\d\.]+)\]', d.comment)
+                        if m_tp:
+                            tp_val = float(m_tp.group(1))
+
+                    # Excursion calculation (pass pos_type so BUY vs SELL is oriented correctly)
                     mae_price, mfe_price, mae_pips, mfe_pips, mae_amount, mfe_amount = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
                     if d.entry in [1, 2] and d.type in [0, 1]:
                         mae_price, mfe_price, mae_pips, mfe_pips, mae_amount, mfe_amount = self.calculate_deal_excursions(
                             symbol=d.symbol or "",
-                            deal_type=d.type,
+                            deal_type=pos_type,
                             open_time=open_time_val,
                             close_time=d.time,
                             open_price=open_price_val,
@@ -231,13 +315,32 @@ class MT5Service:
                             volume=d.volume
                         )
 
+                    # Compute 1R risk amount in currency for this deal
+                    diff_pts = abs(open_price_val - sl_val) if sl_val > 0 else 0.0
+                    price_diff = abs(d.price - open_price_val)
+                    net_profit = d.profit + d.swap + d.commission
+                    if diff_pts > 0 and price_diff > 1e-6 and abs(net_profit) > 1e-4:
+                        risk_r = round(diff_pts * (abs(net_profit) / price_diff), 2)
+                    elif diff_pts > 0:
+                        calc = mt5.order_calc_profit(pos_type, d.symbol or "", d.volume, open_price_val, sl_val)
+                        risk_r = round(abs(calc), 2) if calc is not None else 0.20
+                    else:
+                        risk_r = 0.25 # Micro account fallback
+
+                    if risk_r < 0.05:
+                        risk_r = 0.20
+
+                    r_multiple = round(net_profit / risk_r, 3) if risk_r > 0 else 0.0
+                    mae_r = round(mae_amount / risk_r, 2) if risk_r > 0 else 0.0
+                    mfe_r = round(mfe_amount / risk_r, 2) if risk_r > 0 else 0.0
+
                     res.append({
                         "ticket": d.ticket,
                         "order_id": d.order,
                         "account_id": acc_login,
                         "time": d.time,
                         "time_msc": d.time_msc,
-                        "type": d.type, # 0=BUY, 1=SELL, 2=BALANCE
+                        "type": pos_type, # 0=BUY, 1=SELL
                         "entry": d.entry, # 0=IN, 1=OUT, 2=INOUT
                         "symbol": d.symbol or "",
                         "volume": round(d.volume, 2),
@@ -250,16 +353,16 @@ class MT5Service:
                         "open_time": open_time_val,
                         "open_price": round(open_price_val, 5),
                         "comment": d.comment or "",
-                        "risk_r": 0.0,
-                        "r_multiple": 0.0,
+                        "risk_r": risk_r,
+                        "r_multiple": r_multiple,
                         "mae_price": mae_price,
                         "mfe_price": mfe_price,
                         "mae_pips": mae_pips,
                         "mfe_pips": mfe_pips,
                         "mae_amount": mae_amount,
                         "mfe_amount": mfe_amount,
-                        "mae_r": 0.0,
-                        "mfe_r": 0.0
+                        "mae_r": mae_r,
+                        "mfe_r": mfe_r
                     })
                 return res
 
