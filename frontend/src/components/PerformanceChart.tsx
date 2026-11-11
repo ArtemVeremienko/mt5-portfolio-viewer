@@ -37,16 +37,17 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   const [showRCurve, setShowRCurve] = createSignal(true);
   const [showChangeBars, setShowChangeBars] = createSignal(true);
 
-  // Sync tab with global mode if user changes mode
+  // Sync tab with global mode ONLY when user explicitly toggles header mode
+  let lastMode = props.mode;
   createEffect(() => {
-    if (props.mode === 'r') {
-      setActiveTab('r');
-    } else if (props.mode === 'pct') {
-      if (activeTab() === 'r' || activeTab() === 'balance' || activeTab() === 'profit') {
+    const currentMode = props.mode;
+    if (currentMode !== lastMode) {
+      lastMode = currentMode;
+      if (currentMode === 'r') {
+        setActiveTab('r');
+      } else if (currentMode === 'pct') {
         setActiveTab('growth');
-      }
-    } else if (props.mode === 'currency') {
-      if (activeTab() === 'r' || activeTab() === 'growth') {
+      } else if (currentMode === 'currency') {
         setActiveTab('balance');
       }
     }
@@ -79,9 +80,21 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         timeVisible: true,
         secondsVisible: false,
       },
+      leftPriceScale: {
+        visible: false,
+        autoScale: true,
+        scaleMargins: {
+          top: 0.72,
+          bottom: 0.02,
+        },
+      },
       rightPriceScale: {
         borderColor: '#1e293b',
         autoScale: true,
+        scaleMargins: {
+          top: 0.08,
+          bottom: 0.32,
+        },
       },
       handleScale: {
         axisPressedMouseMove: true,
@@ -132,13 +145,30 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     if (!sortedData.length) return;
 
     const tab = activeTab();
+    const hasBars = showChangeBars() && tab !== 'drawdown';
+
+    // Split scaling: upper region for main curves, bottom 28% region for trade bars
+    chart.priceScale('right').applyOptions({
+      scaleMargins: {
+        top: 0.08,
+        bottom: hasBars ? 0.32 : 0.08,
+      },
+    });
+    chart.priceScale('left').applyOptions({
+      visible: false,
+      autoScale: true,
+      scaleMargins: {
+        top: 0.72,
+        bottom: 0.02,
+      },
+    });
 
     if (tab === 'growth') {
-      // 1. Change Bars (%)
+      // 1. Change Bars (%) on left scale (bottom 28% region)
       if (showChangeBars()) {
         const barSeries = chart.addSeries(HistogramSeries, {
           priceFormat: { type: 'percent' },
-          priceScaleId: 'right',
+          priceScaleId: 'left',
           title: 'Change (%)',
         });
         barSeries.setData(sortedData.map(d => {
@@ -146,13 +176,13 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           return {
             time: d.timestamp as any,
             value: val,
-            color: val >= 0 ? 'rgba(16, 185, 129, 0.55)' : 'rgba(244, 63, 94, 0.55)'
+            color: val >= 0 ? 'rgba(16, 185, 129, 0.65)' : 'rgba(244, 63, 94, 0.65)'
           };
         }));
         seriesList.push(barSeries);
       }
 
-      // 2. Growth (%) Area/Line
+      // 2. Growth (%) Area/Line on right scale (upper region)
       if (showGrowth()) {
         const growthSeries = chart.addSeries(AreaSeries, {
           topColor: 'rgba(16, 185, 129, 0.35)',
@@ -160,6 +190,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           lineColor: '#10b981',
           lineWidth: 2,
           priceFormat: { type: 'percent' },
+          priceScaleId: 'right',
           title: 'Growth',
         });
         growthSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.growth_pct })));
@@ -172,6 +203,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           color: '#f59e0b',
           lineWidth: 2,
           priceFormat: { type: 'percent' },
+          priceScaleId: 'right',
           title: 'Equity Growth',
         });
         equityGrowthSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.growth_pct })));
@@ -179,10 +211,10 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       }
 
     } else if (tab === 'balance') {
-      // 1. Profit Change Bars ($)
+      // 1. Profit Change Bars ($) on left scale (bottom 28% region)
       if (showChangeBars()) {
         const barSeries = chart.addSeries(HistogramSeries, {
-          priceScaleId: 'right',
+          priceScaleId: 'left',
           title: 'Trade Profit ($)',
         });
         barSeries.setData(sortedData.map(d => {
@@ -190,17 +222,18 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           return {
             time: d.timestamp as any,
             value: val,
-            color: val >= 0 ? 'rgba(16, 185, 129, 0.55)' : 'rgba(244, 63, 94, 0.55)'
+            color: val >= 0 ? 'rgba(16, 185, 129, 0.65)' : 'rgba(244, 63, 94, 0.65)'
           };
         }));
         seriesList.push(barSeries);
       }
 
-      // 2. Balance Curve
+      // 2. Balance Curve on right scale (upper region)
       if (showBalance()) {
         const balanceSeries = chart.addSeries(LineSeries, {
           color: '#3b82f6',
           lineWidth: 2,
+          priceScaleId: 'right',
           title: 'Balance',
         });
         balanceSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.balance })));
@@ -212,6 +245,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         const equitySeries = chart.addSeries(LineSeries, {
           color: '#f59e0b',
           lineWidth: 2,
+          priceScaleId: 'right',
           title: 'Equity',
         });
         equitySeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.equity })));
@@ -219,10 +253,10 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       }
 
     } else if (tab === 'profit') {
-      // 1. Trade Profit Bars ($)
+      // 1. Trade Profit Bars ($) on left scale (bottom 28% region)
       if (showChangeBars()) {
         const barSeries = chart.addSeries(HistogramSeries, {
-          priceScaleId: 'right',
+          priceScaleId: 'left',
           title: 'Trade Return ($)',
         });
         barSeries.setData(sortedData.map(d => {
@@ -230,19 +264,20 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           return {
             time: d.timestamp as any,
             value: val,
-            color: val >= 0 ? 'rgba(16, 185, 129, 0.55)' : 'rgba(244, 63, 94, 0.55)'
+            color: val >= 0 ? 'rgba(16, 185, 129, 0.65)' : 'rgba(244, 63, 94, 0.65)'
           };
         }));
         seriesList.push(barSeries);
       }
 
-      // 2. Cumulative Profit
+      // 2. Cumulative Profit on right scale (upper region)
       if (showProfit()) {
         const profitSeries = chart.addSeries(AreaSeries, {
           topColor: 'rgba(59, 130, 246, 0.35)',
           bottomColor: 'rgba(59, 130, 246, 0.0)',
           lineColor: '#3b82f6',
           lineWidth: 2,
+          priceScaleId: 'right',
           title: 'Cumulative Profit',
         });
         profitSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.profit })));
@@ -250,7 +285,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       }
 
     } else if (tab === 'drawdown') {
-      // Drawdown Curve
+      // Drawdown Curve on right scale
       if (showDrawdown()) {
         const drawdownSeries = chart.addSeries(AreaSeries, {
           topColor: 'rgba(239, 68, 68, 0.0)',
@@ -259,6 +294,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           lineWidth: 2,
           invertFilledArea: true,
           priceFormat: { type: 'percent' },
+          priceScaleId: 'right',
           title: 'Drawdown (%)',
         });
         drawdownSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: -Math.abs(d.drawdown_pct) })));
@@ -266,10 +302,14 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       }
 
     } else if (tab === 'r') {
-      // 1. R-Multiple Bars
+      // 1. R-Multiple Bars on left scale (bottom 28% region)
       if (showChangeBars()) {
         const barSeries = chart.addSeries(HistogramSeries, {
-          priceScaleId: 'right',
+          priceScaleId: 'left',
+          priceFormat: {
+            type: 'custom',
+            formatter: (p: number) => (p >= 0 ? '+' : '') + p.toFixed(2) + 'R',
+          },
           title: 'Trade R',
         });
         barSeries.setData(sortedData.map(d => {
@@ -277,19 +317,24 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           return {
             time: d.timestamp as any,
             value: val,
-            color: val >= 0 ? 'rgba(168, 85, 247, 0.60)' : 'rgba(244, 63, 94, 0.60)'
+            color: val >= 0 ? 'rgba(168, 85, 247, 0.70)' : 'rgba(244, 63, 94, 0.70)'
           };
         }));
         seriesList.push(barSeries);
       }
 
-      // 2. Cumulative R
+      // 2. Cumulative R on right scale (upper region)
       if (showRCurve()) {
         const rSeries = chart.addSeries(AreaSeries, {
           topColor: 'rgba(168, 85, 247, 0.4)',
           bottomColor: 'rgba(168, 85, 247, 0.0)',
           lineColor: '#a855f7',
           lineWidth: 2,
+          priceScaleId: 'right',
+          priceFormat: {
+            type: 'custom',
+            formatter: (p: number) => (p >= 0 ? '+' : '') + p.toFixed(2) + 'R',
+          },
           title: 'Cumulative R',
         });
         rSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.cumulative_r })));
