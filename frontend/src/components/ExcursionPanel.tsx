@@ -23,7 +23,35 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
   const [unitMode, setUnitMode] = createSignal<'auto' | 'pips'>('auto');
   const [activeView, setActiveView] = createSignal<ExcursionView>('dual');
   const [hoveredTrade, setHoveredTrade] = createSignal<ExcursionTrade | null>(null);
-  const [mousePos, setMousePos] = createSignal<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [mousePos, setMousePos] = createSignal<{ x: number; y: number; placeBelow: boolean }>({ x: 0, y: 0, placeBelow: false });
+
+  let leaveTimer: any = null;
+
+  const handlePointEnter = (e: MouseEvent, t: ExcursionTrade) => {
+    if (leaveTimer) {
+      clearTimeout(leaveTimer);
+      leaveTimer = null;
+    }
+    const target = e.currentTarget as SVGElement;
+    const rect = target.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top;
+
+    // Viewport-relative coordinates for position: fixed (no scroll offsets)
+    const clampedX = Math.max(140, Math.min(window.innerWidth - 140, centerX));
+    const placeBelow = centerY < 170;
+    const clampedY = placeBelow ? (rect.bottom + 12) : (centerY - 12);
+
+    setMousePos({ x: clampedX, y: clampedY, placeBelow });
+    setHoveredTrade(t);
+  };
+
+  const handlePointLeave = () => {
+    if (leaveTimer) clearTimeout(leaveTimer);
+    leaveTimer = setTimeout(() => {
+      setHoveredTrade(null);
+    }, 80);
+  };
 
   const stats = () => props.excursionStats;
   const trades = () => props.excursionStats?.trades || [];
@@ -509,24 +537,28 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                       const cx = padLeft + (mae / b.maxVal) * plotW;
                       const cy = 20 + plotH * (1 - (mfe / b.maxVal));
                       const isFavorable = mfe >= mae;
+                      const isHovered = () => hoveredTrade()?.ticket === t.ticket;
 
                       return (
-                        <circle
-                          cx={cx}
-                          cy={cy}
-                          r={hoveredTrade()?.ticket === t.ticket ? 7 : 5}
-                          fill={isFavorable ? '#10b981' : '#f43f5e'}
-                          fill-opacity="0.85"
-                          stroke={hoveredTrade()?.ticket === t.ticket ? '#ffffff' : (isFavorable ? '#059669' : '#e11d48')}
-                          stroke-width="1.8"
-                          class="cursor-pointer transition-all hover:scale-125"
-                          onMouseEnter={(e) => {
-                            setHoveredTrade(t);
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setMousePos({ x: rect.left + window.scrollX, y: rect.top + window.scrollY - 10 });
-                          }}
-                          onMouseLeave={() => setHoveredTrade(null)}
-                        />
+                        <g
+                          class="cursor-pointer"
+                          onMouseEnter={(e) => handlePointEnter(e, t)}
+                          onMouseLeave={handlePointLeave}
+                        >
+                          {/* Invisible expanded hit target to prevent micro-flicker */}
+                          <circle cx={cx} cy={cy} r="12" fill="transparent" />
+                          {/* Visible dot */}
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r={isHovered() ? 7 : 5}
+                            fill={isFavorable ? '#10b981' : '#f43f5e'}
+                            fill-opacity={isHovered() ? 1.0 : 0.85}
+                            stroke={isHovered() ? '#ffffff' : (isFavorable ? '#059669' : '#e11d48')}
+                            stroke-width={isHovered() ? 2.5 : 1.5}
+                            class="transition-colors duration-150"
+                          />
+                        </g>
                       );
                     }}
                   </For>
@@ -603,24 +635,26 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                         const cx = padLeft + (mae / b.maxMae) * plotW;
                         const cy = 15 + plotH * ((b.maxRet - ret) / (b.maxRet - b.minRet));
                         const isWin = ret >= 0;
+                        const isHovered = () => hoveredTrade()?.ticket === t.ticket;
 
                         return (
-                          <circle
-                            cx={cx}
-                            cy={cy}
-                            r={hoveredTrade()?.ticket === t.ticket ? 6 : 4}
-                            fill={isWin ? '#10b981' : '#f43f5e'}
-                            fill-opacity="0.8"
-                            stroke={hoveredTrade()?.ticket === t.ticket ? '#ffffff' : (isWin ? '#059669' : '#e11d48')}
-                            stroke-width="1.5"
-                            class="cursor-pointer transition-all hover:scale-125"
-                            onMouseEnter={(e) => {
-                              setHoveredTrade(t);
-                              const rect = e.currentTarget.getBoundingClientRect();
-                              setMousePos({ x: rect.left + window.scrollX, y: rect.top + window.scrollY - 10 });
-                            }}
-                            onMouseLeave={() => setHoveredTrade(null)}
-                          />
+                          <g
+                            class="cursor-pointer"
+                            onMouseEnter={(e) => handlePointEnter(e, t)}
+                            onMouseLeave={handlePointLeave}
+                          >
+                            <circle cx={cx} cy={cy} r="12" fill="transparent" />
+                            <circle
+                              cx={cx}
+                              cy={cy}
+                              r={isHovered() ? 6.5 : 4.5}
+                              fill={isWin ? '#10b981' : '#f43f5e'}
+                              fill-opacity={isHovered() ? 1.0 : 0.85}
+                              stroke={isHovered() ? '#ffffff' : (isWin ? '#059669' : '#e11d48')}
+                              stroke-width={isHovered() ? 2.5 : 1.5}
+                              class="transition-colors duration-150"
+                            />
+                          </g>
                         );
                       }}
                     </For>
@@ -691,24 +725,26 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                         const cx = padLeft + (mfe / b.maxMfe) * plotW;
                         const cy = 15 + plotH * ((b.maxRet - ret) / (b.maxRet - b.minRet));
                         const isWin = ret >= 0;
+                        const isHovered = () => hoveredTrade()?.ticket === t.ticket;
 
                         return (
-                          <circle
-                            cx={cx}
-                            cy={cy}
-                            r={hoveredTrade()?.ticket === t.ticket ? 6 : 4}
-                            fill={isWin ? '#38bdf8' : '#f43f5e'}
-                            fill-opacity="0.8"
-                            stroke={hoveredTrade()?.ticket === t.ticket ? '#ffffff' : (isWin ? '#0284c7' : '#e11d48')}
-                            stroke-width="1.5"
-                            class="cursor-pointer transition-all hover:scale-125"
-                            onMouseEnter={(e) => {
-                              setHoveredTrade(t);
-                              const rect = e.currentTarget.getBoundingClientRect();
-                              setMousePos({ x: rect.left + window.scrollX, y: rect.top + window.scrollY - 10 });
-                            }}
-                            onMouseLeave={() => setHoveredTrade(null)}
-                          />
+                          <g
+                            class="cursor-pointer"
+                            onMouseEnter={(e) => handlePointEnter(e, t)}
+                            onMouseLeave={handlePointLeave}
+                          >
+                            <circle cx={cx} cy={cy} r="12" fill="transparent" />
+                            <circle
+                              cx={cx}
+                              cy={cy}
+                              r={isHovered() ? 6.5 : 4.5}
+                              fill={isWin ? '#38bdf8' : '#f43f5e'}
+                              fill-opacity={isHovered() ? 1.0 : 0.85}
+                              stroke={isHovered() ? '#ffffff' : (isWin ? '#0284c7' : '#e11d48')}
+                              stroke-width={isHovered() ? 2.5 : 1.5}
+                              class="transition-colors duration-150"
+                            />
+                          </g>
                         );
                       }}
                     </For>
@@ -741,12 +777,12 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
               style={{
                 position: 'fixed',
                 left: `${mousePos().x}px`,
-                top: `${mousePos().y - 130}px`,
-                transform: 'translateX(-50%)',
+                top: `${mousePos().y}px`,
+                transform: mousePos().placeBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
                 'pointer-events': 'none',
                 'z-index': 9999,
               }}
-              class="bg-slate-900 border border-slate-700 rounded-xl p-3 shadow-2xl text-xs space-y-1.5 w-60 backdrop-blur-md"
+              class="bg-slate-900/95 border border-slate-700/80 rounded-xl p-3 shadow-2xl text-xs space-y-1.5 w-60 backdrop-blur-md pointer-events-none select-none transition-transform duration-75 ease-out animate-in fade-in"
             >
               <div class="flex items-center justify-between border-b border-slate-800 pb-1 font-mono">
                 <span class="font-bold text-white">#{t().ticket} • {t().symbol}</span>
