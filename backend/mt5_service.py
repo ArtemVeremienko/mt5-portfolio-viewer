@@ -172,15 +172,45 @@ class MT5Service:
         mfe_pips = round(mfe_price / pip_size, 1)
 
         # Amount calculation
-        price_diff = abs(close_price - open_price)
-        if price_diff > 1e-6 and abs(net_profit) > 1e-4:
-            pip_val = abs(net_profit) / price_diff
-            mae_amount = round(mae_price * pip_val, 2)
-            mfe_amount = round(mfe_price * pip_val, 2)
-        else:
-            contract_size = 100000.0 if pip_size <= 0.01 else 100.0
-            mae_amount = round(mae_price * volume * contract_size, 2)
-            mfe_amount = round(mfe_price * volume * contract_size, 2)
+        mae_amount = 0.0
+        mfe_amount = 0.0
+        if self.is_connected() and symbol and volume > 0 and open_price > 0:
+            try:
+                if deal_type == 0: # BUY
+                    calc_mae = mt5.order_calc_profit(mt5.ORDER_TYPE_BUY, symbol, volume, open_price, open_price - mae_price) if mae_price > 0 else 0.0
+                    calc_mfe = mt5.order_calc_profit(mt5.ORDER_TYPE_BUY, symbol, volume, open_price, open_price + mfe_price) if mfe_price > 0 else 0.0
+                else: # SELL
+                    calc_mae = mt5.order_calc_profit(mt5.ORDER_TYPE_SELL, symbol, volume, open_price, open_price + mae_price) if mae_price > 0 else 0.0
+                    calc_mfe = mt5.order_calc_profit(mt5.ORDER_TYPE_SELL, symbol, volume, open_price, open_price - mfe_price) if mfe_price > 0 else 0.0
+                if calc_mae is not None:
+                    mae_amount = round(abs(calc_mae), 2)
+                if calc_mfe is not None:
+                    mfe_amount = round(abs(calc_mfe), 2)
+            except Exception as e:
+                pass
+
+        # Fallback amount calculation when MT5 API order_calc_profit is unavailable
+        if mae_amount == 0.0 and mfe_amount == 0.0:
+            price_diff = abs(close_price - open_price)
+            if price_diff > 1e-6 and abs(net_profit) > 1e-4:
+                pip_val = abs(net_profit) / price_diff
+                mae_amount = round(mae_price * pip_val, 2)
+                mfe_amount = round(mfe_price * pip_val, 2)
+            else:
+                if any(c in sym_upper for c in ["EUR", "USD", "GBP", "CHF", "AUD", "NZD", "CAD"]):
+                    if "JPY" in sym_upper:
+                        mae_amount = round((mae_price / 0.01) * volume * 1000.0 / 150.0, 2)
+                        mfe_amount = round((mfe_price / 0.01) * volume * 1000.0 / 150.0, 2)
+                    else:
+                        mae_amount = round(mae_price * volume * 100000.0, 2)
+                        mfe_amount = round(mfe_price * volume * 100000.0, 2)
+                elif "XAU" in sym_upper:
+                    mae_amount = round(mae_price * volume * 100.0, 2)
+                    mfe_amount = round(mfe_price * volume * 100.0, 2)
+                else:
+                    # Index CFD (.DE40Cash, US500, etc. where 1 pt = volume * ~1.1 USD)
+                    mae_amount = round(mae_price * volume * 1.1, 2)
+                    mfe_amount = round(mfe_price * volume * 1.1, 2)
 
         return (
             round(mae_price, 5),
