@@ -90,13 +90,23 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
     return { mae, mfe, ret };
   };
 
-  // Bounds for Chart 1 (MAE vs Return)
+  // Format axis tick numbers smartly based on data scale
+  const formatAxisNum = (val: number) => {
+    const abs = Math.abs(val);
+    if (abs === 0) return '0';
+    if (abs < 0.05) return val.toFixed(3);
+    if (abs < 1.0) return val.toFixed(2);
+    if (abs < 10.0) return val.toFixed(1);
+    return val.toFixed(0);
+  };
+
+  // Bounds for Chart 1 (MAE vs Return) - Auto-fits cleanly to true data range
   const maeChartBounds = () => {
     const list = trades();
-    if (!list.length) return { maxMae: 10, minRet: -10, maxRet: 10 };
-    let maxMae = 1;
-    let maxRet = 1;
-    let minRet = -1;
+    if (!list.length) return { maxMae: 1.0, minRet: -1.0, maxRet: 1.0 };
+    let maxMae = 0.001;
+    let maxRet = 0.001;
+    let minRet = -0.001;
 
     for (const t of list) {
       const { mae, ret } = getTradeValues(t);
@@ -104,20 +114,29 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
       if (ret > maxRet) maxRet = ret;
       if (ret < minRet) minRet = ret;
     }
+
+    // 10% breathing room padding
+    const paddingMae = Math.max(0.005, maxMae * 0.10);
+    const finalMaxMae = Math.max(0.01, maxMae + paddingMae);
+
+    const paddingRet = Math.max(0.005, (maxRet - minRet) * 0.10);
+    const finalMaxRet = maxRet + paddingRet;
+    const finalMinRet = minRet - paddingRet;
+
     return {
-      maxMae: maxMae * 1.15,
-      minRet: minRet * 1.15,
-      maxRet: maxRet * 1.15,
+      maxMae: finalMaxMae,
+      minRet: finalMinRet,
+      maxRet: finalMaxRet,
     };
   };
 
-  // Bounds for Chart 2 (MFE vs Return)
+  // Bounds for Chart 2 (MFE vs Return) - Auto-fits cleanly to true data range
   const mfeChartBounds = () => {
     const list = trades();
-    if (!list.length) return { maxMfe: 10, minRet: -10, maxRet: 10 };
-    let maxMfe = 1;
-    let maxRet = 1;
-    let minRet = -1;
+    if (!list.length) return { maxMfe: 1.0, minRet: -1.0, maxRet: 1.0 };
+    let maxMfe = 0.001;
+    let maxRet = 0.001;
+    let minRet = -0.001;
 
     for (const t of list) {
       const { mfe, ret } = getTradeValues(t);
@@ -125,19 +144,27 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
       if (ret > maxRet) maxRet = ret;
       if (ret < minRet) minRet = ret;
     }
+
+    const paddingMfe = Math.max(0.005, maxMfe * 0.10);
+    const finalMaxMfe = Math.max(0.01, maxMfe + paddingMfe);
+
+    const paddingRet = Math.max(0.005, (maxRet - minRet) * 0.10);
+    const finalMaxRet = maxRet + paddingRet;
+    const finalMinRet = minRet - paddingRet;
+
     return {
-      maxMfe: maxMfe * 1.15,
-      minRet: minRet * 1.15,
-      maxRet: maxRet * 1.15,
+      maxMfe: finalMaxMfe,
+      minRet: finalMinRet,
+      maxRet: finalMaxRet,
     };
   };
 
-  // Bounds for Chart 3 (MFE vs MAE Quality Matrix)
+  // Bounds for Chart 3 (MFE vs MAE Quality Matrix) - Auto-fits square to true peak
   const qualityMatrixBounds = () => {
     const list = trades();
-    if (!list.length) return { maxVal: 10, midMae: 5, midMfe: 5 };
-    let maxMae = 0.1;
-    let maxMfe = 0.1;
+    if (!list.length) return { maxVal: 1.0, midMae: 0.5, midMfe: 0.5 };
+    let maxMae = 0.001;
+    let maxMfe = 0.001;
     let sumMae = 0;
     let sumMfe = 0;
 
@@ -149,7 +176,8 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
       sumMfe += mfe;
     }
 
-    const maxVal = Math.max(maxMae, maxMfe) * 1.15;
+    const peak = Math.max(maxMae, maxMfe);
+    const maxVal = Math.max(0.01, peak * 1.12);
     const midMae = sumMae / Math.max(1, list.length);
     const midMfe = sumMfe / Math.max(1, list.length);
 
@@ -566,10 +594,10 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                   {/* Axis Labels */}
                   <text x={padLeft} y={20 + plotH + 20} fill="#64748b" font-size="10">0</text>
                   <text x={padLeft + plotW} y={20 + plotH + 20} fill="#64748b" font-size="10" text-anchor="end">
-                    {b.maxVal.toFixed(1)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MAE Drawdown)
+                    {formatAxisNum(b.maxVal)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MAE Drawdown)
                   </text>
                   <text x={padLeft - 10} y="25" fill="#64748b" font-size="10" text-anchor="end">
-                    {b.maxVal.toFixed(1)}
+                    {formatAxisNum(b.maxVal)}
                   </text>
                   <text x={padLeft - 10} y={20 + plotH} fill="#64748b" font-size="10" text-anchor="end">
                     0 (MFE)
@@ -661,13 +689,13 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
 
                     <text x={padLeft} y={15 + plotH + 20} fill="#64748b" font-size="10">0</text>
                     <text x={padLeft + plotW} y={15 + plotH + 20} fill="#64748b" font-size="10" text-anchor="end">
-                      {b.maxMae.toFixed(1)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MAE)
+                      {formatAxisNum(b.maxMae)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MAE)
                     </text>
                     <text x={padLeft - 8} y="20" fill="#64748b" font-size="10" text-anchor="end">
-                      +{b.maxRet.toFixed(1)}
+                      +{formatAxisNum(b.maxRet)}
                     </text>
                     <text x={padLeft - 8} y={15 + plotH} fill="#64748b" font-size="10" text-anchor="end">
-                      {b.minRet.toFixed(1)}
+                      {formatAxisNum(b.minRet)}
                     </text>
                   </svg>
                 );
@@ -751,13 +779,13 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
 
                     <text x={padLeft} y={15 + plotH + 20} fill="#64748b" font-size="10">0</text>
                     <text x={padLeft + plotW} y={15 + plotH + 20} fill="#64748b" font-size="10" text-anchor="end">
-                      {b.maxMfe.toFixed(1)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MFE)
+                      {formatAxisNum(b.maxMfe)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MFE)
                     </text>
                     <text x={padLeft - 8} y="20" fill="#64748b" font-size="10" text-anchor="end">
-                      +{b.maxRet.toFixed(1)}
+                      +{formatAxisNum(b.maxRet)}
                     </text>
                     <text x={padLeft - 8} y={15 + plotH} fill="#64748b" font-size="10" text-anchor="end">
-                      {b.minRet.toFixed(1)}
+                      {formatAxisNum(b.minRet)}
                     </text>
                   </svg>
                 );
