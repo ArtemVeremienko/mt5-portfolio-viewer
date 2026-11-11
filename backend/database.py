@@ -55,9 +55,33 @@ def init_db():
         comment TEXT,
         risk_r REAL,
         r_multiple REAL,
+        mae_price REAL DEFAULT 0.0,
+        mfe_price REAL DEFAULT 0.0,
+        mae_pips REAL DEFAULT 0.0,
+        mfe_pips REAL DEFAULT 0.0,
+        mae_amount REAL DEFAULT 0.0,
+        mfe_amount REAL DEFAULT 0.0,
+        mae_r REAL DEFAULT 0.0,
+        mfe_r REAL DEFAULT 0.0,
         FOREIGN KEY(account_id) REFERENCES accounts(login)
     )
     """)
+    
+    # Auto-migrate existing deals table if columns are missing
+    existing_cols = [row[1] for row in cursor.execute("PRAGMA table_info(deals)").fetchall()]
+    new_cols = [
+        ("mae_price", "REAL DEFAULT 0.0"),
+        ("mfe_price", "REAL DEFAULT 0.0"),
+        ("mae_pips", "REAL DEFAULT 0.0"),
+        ("mfe_pips", "REAL DEFAULT 0.0"),
+        ("mae_amount", "REAL DEFAULT 0.0"),
+        ("mfe_amount", "REAL DEFAULT 0.0"),
+        ("mae_r", "REAL DEFAULT 0.0"),
+        ("mfe_r", "REAL DEFAULT 0.0"),
+    ]
+    for col_name, col_def in new_cols:
+        if col_name not in existing_cols:
+            cursor.execute(f"ALTER TABLE deals ADD COLUMN {col_name} {col_def}")
     
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS equity_snapshots (
@@ -123,9 +147,24 @@ def upsert_deals(deals: List[Dict[str, Any]]):
         return
     conn = get_db_connection()
     cursor = conn.cursor()
+    
+    # Ensure default values for excursion fields
+    normalized_deals = []
+    for d in deals:
+        deal_copy = dict(d)
+        deal_copy.setdefault("mae_price", 0.0)
+        deal_copy.setdefault("mfe_price", 0.0)
+        deal_copy.setdefault("mae_pips", 0.0)
+        deal_copy.setdefault("mfe_pips", 0.0)
+        deal_copy.setdefault("mae_amount", 0.0)
+        deal_copy.setdefault("mfe_amount", 0.0)
+        deal_copy.setdefault("mae_r", 0.0)
+        deal_copy.setdefault("mfe_r", 0.0)
+        normalized_deals.append(deal_copy)
+
     cursor.executemany("""
-    INSERT INTO deals (ticket, order_id, account_id, time, time_msc, type, entry, symbol, volume, price, profit, swap, commission, sl, tp, open_time, open_price, comment, risk_r, r_multiple)
-    VALUES (:ticket, :order_id, :account_id, :time, :time_msc, :type, :entry, :symbol, :volume, :price, :profit, :swap, :commission, :sl, :tp, :open_time, :open_price, :comment, :risk_r, :r_multiple)
+    INSERT INTO deals (ticket, order_id, account_id, time, time_msc, type, entry, symbol, volume, price, profit, swap, commission, sl, tp, open_time, open_price, comment, risk_r, r_multiple, mae_price, mfe_price, mae_pips, mfe_pips, mae_amount, mfe_amount, mae_r, mfe_r)
+    VALUES (:ticket, :order_id, :account_id, :time, :time_msc, :type, :entry, :symbol, :volume, :price, :profit, :swap, :commission, :sl, :tp, :open_time, :open_price, :comment, :risk_r, :r_multiple, :mae_price, :mfe_price, :mae_pips, :mfe_pips, :mae_amount, :mfe_amount, :mae_r, :mfe_r)
     ON CONFLICT(ticket) DO UPDATE SET
         order_id = excluded.order_id,
         account_id = excluded.account_id,
@@ -145,8 +184,16 @@ def upsert_deals(deals: List[Dict[str, Any]]):
         open_price = excluded.open_price,
         comment = excluded.comment,
         risk_r = excluded.risk_r,
-        r_multiple = excluded.r_multiple
-    """, deals)
+        r_multiple = excluded.r_multiple,
+        mae_price = excluded.mae_price,
+        mfe_price = excluded.mfe_price,
+        mae_pips = excluded.mae_pips,
+        mfe_pips = excluded.mfe_pips,
+        mae_amount = excluded.mae_amount,
+        mfe_amount = excluded.mfe_amount,
+        mae_r = excluded.mae_r,
+        mfe_r = excluded.mfe_r
+    """, normalized_deals)
     conn.commit()
     conn.close()
 

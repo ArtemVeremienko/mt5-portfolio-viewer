@@ -130,7 +130,20 @@ def process_portfolio_analytics(
             "symbol_stats": [],
             "hourly_stats": [],
             "day_of_week_stats": [],
-            "r_distribution": []
+            "r_distribution": [],
+            "excursion_stats": {
+                "optimal_sl_pips": 0.0,
+                "optimal_sl_amount": 0.0,
+                "optimal_sl_r": 0.0,
+                "mfe_capture_efficiency_pct": 0.0,
+                "avg_mae_pips": 0.0,
+                "avg_mae_amount": 0.0,
+                "avg_mae_r": 0.0,
+                "avg_mfe_pips": 0.0,
+                "avg_mfe_amount": 0.0,
+                "avg_mfe_r": 0.0,
+                "trades": []
+            }
         }
 
     # Filter deals by time window if provided
@@ -180,10 +193,23 @@ def process_portfolio_analytics(
                 risk_1r = compute_1r_risk(d, max(100.0, running_balance), default_risk_pct)
                 r_mult = round(net_trade_profit / risk_1r, 3) if risk_1r > 0 else 0.0
                 
+                mae_amt = float(d.get("mae_amount", 0.0) or 0.0)
+                mfe_amt = float(d.get("mfe_amount", 0.0) or 0.0)
+                mae_pips = float(d.get("mae_pips", 0.0) or 0.0)
+                mfe_pips = float(d.get("mfe_pips", 0.0) or 0.0)
+                mae_r = round(mae_amt / risk_1r, 2) if risk_1r > 0 else float(d.get("mae_r", 0.0) or 0.0)
+                mfe_r = round(mfe_amt / risk_1r, 2) if risk_1r > 0 else float(d.get("mfe_r", 0.0) or 0.0)
+
                 deal_record = dict(d)
                 deal_record["net_profit"] = net_trade_profit
                 deal_record["risk_r"] = risk_1r
                 deal_record["r_multiple"] = r_mult
+                deal_record["mae_amount"] = mae_amt
+                deal_record["mfe_amount"] = mfe_amt
+                deal_record["mae_pips"] = mae_pips
+                deal_record["mfe_pips"] = mfe_pips
+                deal_record["mae_r"] = mae_r
+                deal_record["mfe_r"] = mfe_r
                 trade_deals.append(deal_record)
 
                 running_balance += net_trade_profit
@@ -444,6 +470,60 @@ def process_portfolio_analytics(
     latest_bal = current_account.get("balance", current_run_bal)
     latest_eq = current_account.get("equity", latest_bal)
 
+    # Excursion Analytics (MAE / MFE)
+    winning_mae_pips = [t["mae_pips"] for t in winning_trades if t.get("mae_pips") is not None and t.get("mae_pips") > 0]
+    winning_mae_amt = [t["mae_amount"] for t in winning_trades if t.get("mae_amount") is not None and t.get("mae_amount") > 0]
+    winning_mae_r = [t["mae_r"] for t in winning_trades if t.get("mae_r") is not None and t.get("mae_r") > 0]
+
+    optimal_sl_pips = float(np.percentile(winning_mae_pips, 90)) if winning_mae_pips else 0.0
+    optimal_sl_amt = float(np.percentile(winning_mae_amt, 90)) if winning_mae_amt else 0.0
+    optimal_sl_r = float(np.percentile(winning_mae_r, 90)) if winning_mae_r else 0.0
+
+    efficiencies = [
+        (t["net_profit"] / t["mfe_amount"] * 100.0)
+        for t in winning_trades
+        if t.get("mfe_amount", 0) > 0 and t["net_profit"] > 0
+    ]
+    mfe_capture_eff = float(np.mean(efficiencies)) if efficiencies else 0.0
+
+    all_mae_pips = [t["mae_pips"] for t in trade_deals if t.get("mae_pips") is not None]
+    all_mae_amt = [t["mae_amount"] for t in trade_deals if t.get("mae_amount") is not None]
+    all_mae_r = [t["mae_r"] for t in trade_deals if t.get("mae_r") is not None]
+    all_mfe_pips = [t["mfe_pips"] for t in trade_deals if t.get("mfe_pips") is not None]
+    all_mfe_amt = [t["mfe_amount"] for t in trade_deals if t.get("mfe_amount") is not None]
+    all_mfe_r = [t["mfe_r"] for t in trade_deals if t.get("mfe_r") is not None]
+
+    excursion_stats = {
+        "optimal_sl_pips": round(optimal_sl_pips, 1),
+        "optimal_sl_amount": round(optimal_sl_amt, 2),
+        "optimal_sl_r": round(optimal_sl_r, 2),
+        "mfe_capture_efficiency_pct": round(mfe_capture_eff, 1),
+        "avg_mae_pips": round(float(np.mean(all_mae_pips)), 1) if all_mae_pips else 0.0,
+        "avg_mae_amount": round(float(np.mean(all_mae_amt)), 2) if all_mae_amt else 0.0,
+        "avg_mae_r": round(float(np.mean(all_mae_r)), 2) if all_mae_r else 0.0,
+        "avg_mfe_pips": round(float(np.mean(all_mfe_pips)), 1) if all_mfe_pips else 0.0,
+        "avg_mfe_amount": round(float(np.mean(all_mfe_amt)), 2) if all_mfe_amt else 0.0,
+        "avg_mfe_r": round(float(np.mean(all_mfe_r)), 2) if all_mfe_r else 0.0,
+        "trades": [
+            {
+                "ticket": t.get("ticket"),
+                "symbol": t.get("symbol"),
+                "time": t.get("time"),
+                "type": t.get("type"),
+                "volume": t.get("volume"),
+                "net_profit": t.get("net_profit"),
+                "r_multiple": t.get("r_multiple"),
+                "mae_pips": t.get("mae_pips"),
+                "mfe_pips": t.get("mfe_pips"),
+                "mae_amount": t.get("mae_amount"),
+                "mfe_amount": t.get("mfe_amount"),
+                "mae_r": t.get("mae_r"),
+                "mfe_r": t.get("mfe_r"),
+            }
+            for t in trade_deals
+        ]
+    }
+
     return {
         "account": current_account,
         "stats": {
@@ -496,5 +576,6 @@ def process_portfolio_analytics(
         "hourly_stats": hourly_stats,
         "day_of_week_stats": day_of_week_stats,
         "r_distribution": r_distribution,
+        "excursion_stats": excursion_stats,
         "closed_trades": trade_deals[::-1] # Reverse to display newest first
     }

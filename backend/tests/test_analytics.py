@@ -67,6 +67,10 @@ def test_portfolio_analytics_calculations():
     assert stats["total_r"] > 0
     assert stats["sqn"] > 0
     assert len(res["curves"]) > 0
+    assert "excursion_stats" in res
+    assert "optimal_sl_r" in res["excursion_stats"]
+    assert "mfe_capture_efficiency_pct" in res["excursion_stats"]
+    assert len(res["excursion_stats"]["trades"]) == 3
 
 def test_database_persistence():
     init_db()

@@ -139,6 +139,42 @@ export interface TradeDeal {
   risk_r: number;
   r_multiple: number;
   net_profit?: number;
+  mae_amount?: number;
+  mfe_amount?: number;
+  mae_pips?: number;
+  mfe_pips?: number;
+  mae_r?: number;
+  mfe_r?: number;
+}
+
+export interface ExcursionTrade {
+  ticket: number;
+  symbol: string;
+  time: number;
+  type: number;
+  volume: number;
+  net_profit: number;
+  r_multiple: number;
+  mae_pips: number;
+  mfe_pips: number;
+  mae_amount: number;
+  mfe_amount: number;
+  mae_r: number;
+  mfe_r: number;
+}
+
+export interface ExcursionStats {
+  optimal_sl_pips: number;
+  optimal_sl_amount: number;
+  optimal_sl_r: number;
+  mfe_capture_efficiency_pct: number;
+  avg_mae_pips: number;
+  avg_mae_amount: number;
+  avg_mae_r: number;
+  avg_mfe_pips: number;
+  avg_mfe_amount: number;
+  avg_mfe_r: number;
+  trades: ExcursionTrade[];
 }
 
 export interface OpenPosition {
@@ -166,5 +202,6 @@ export interface PortfolioData {
   hourly_stats: HourlyStat[];
   day_of_week_stats: DayOfWeekStat[];
   r_distribution: RDistributionBucket[];
+  excursion_stats: ExcursionStats;
   closed_trades: TradeDeal[];
 }

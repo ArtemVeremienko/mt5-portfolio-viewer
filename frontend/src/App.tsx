@@ -12,11 +12,13 @@ import { MonthlyHeatmap } from './components/MonthlyHeatmap';
 import { VanTharpPanel } from './components/VanTharpPanel';
 import { TradingStats } from './components/TradingStats';
 import { TradesTable } from './components/TradesTable';
+import { ExcursionPanel } from './components/ExcursionPanel';
 import { 
   LineChart, 
   Award, 
   Layers, 
-  PieChart 
+  PieChart,
+  Activity
 } from 'lucide-solid';
 
 export const App: Component = () => {
@@ -28,7 +30,7 @@ export const App: Component = () => {
   const [isMt5Connected, setIsMt5Connected] = createSignal<boolean>(false);
   const [isWsConnected, setIsWsConnected] = createSignal<boolean>(false);
   const [isSyncing, setIsSyncing] = createSignal<boolean>(false);
-  const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'trades' | 'breakdown'>('overview');
+  const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'excursions' | 'trades' | 'breakdown'>('overview');
 
   let ws: WebSocket | null = null;
   let wsReconnectTimer: any = null;
@@ -239,6 +241,18 @@ export const App: Component = () => {
 
             <button
               class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                mainTab() === 'excursions'
+                  ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-600/30'
+                  : 'text-cyan-400 hover:text-cyan-200 hover:bg-cyan-950/30'
+              }`}
+              onClick={() => setMainTab('excursions')}
+            >
+              <Activity size={15} />
+              <span>Excursions (MAE / MFE)</span>
+            </button>
+
+            <button
+              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 mainTab() === 'trades'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -294,6 +308,14 @@ export const App: Component = () => {
             <MonthlyHeatmap
               matrix={portfolioData()?.monthly_matrix || []}
               mode="r"
+            />
+          </Show>
+
+          {/* Tab: Excursions (MAE / MFE) */}
+          <Show when={mainTab() === 'excursions'}>
+            <ExcursionPanel
+              excursionStats={portfolioData()?.excursion_stats || null}
+              mode={metricMode()}
             />
           </Show>
 
