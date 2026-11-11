@@ -1,14 +1,27 @@
 import { Component, createSignal, For, Show } from 'solid-js';
 import { ExcursionStats, ExcursionTrade, MetricMode } from '../types';
-import { Activity, ShieldAlert, TrendingUp, Target, Info, CheckCircle2 } from 'lucide-solid';
+import { 
+  Activity, 
+  ShieldAlert, 
+  TrendingUp, 
+  Target, 
+  Crosshair, 
+  Zap, 
+  AlertTriangle,
+  Layers,
+  Sparkles
+} from 'lucide-solid';
 
 interface ExcursionPanelProps {
   excursionStats: ExcursionStats | null;
   mode: MetricMode;
 }
 
+type ExcursionView = 'dual' | 'quality_matrix';
+
 export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
   const [unitMode, setUnitMode] = createSignal<'auto' | 'pips'>('auto');
+  const [activeView, setActiveView] = createSignal<ExcursionView>('dual');
   const [hoveredTrade, setHoveredTrade] = createSignal<ExcursionTrade | null>(null);
   const [mousePos, setMousePos] = createSignal<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -40,7 +53,7 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
     if (isPipsMode()) {
       mae = t.mae_pips;
       mfe = t.mfe_pips;
-      ret = t.net_profit; // return still indicates win/loss
+      ret = t.net_profit;
     } else if (isRMode()) {
       mae = t.mae_r;
       mfe = t.mfe_r;
@@ -91,10 +104,88 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
     };
   };
 
+  // Bounds for Chart 3 (MFE vs MAE Quality Matrix)
+  const qualityMatrixBounds = () => {
+    const list = trades();
+    if (!list.length) return { maxVal: 10, midMae: 5, midMfe: 5 };
+    let maxMae = 0.1;
+    let maxMfe = 0.1;
+    let sumMae = 0;
+    let sumMfe = 0;
+
+    for (const t of list) {
+      const { mae, mfe } = getTradeValues(t);
+      if (mae > maxMae) maxMae = mae;
+      if (mfe > maxMfe) maxMfe = mfe;
+      sumMae += mae;
+      sumMfe += mfe;
+    }
+
+    const maxVal = Math.max(maxMae, maxMfe) * 1.15;
+    const midMae = sumMae / Math.max(1, list.length);
+    const midMfe = sumMfe / Math.max(1, list.length);
+
+    return { maxVal, midMae, midMfe };
+  };
+
+  // Quadrant Metrics for Trade Quality Matrix
+  const qualityMetrics = () => {
+    const list = trades();
+    if (!list.length) {
+      return {
+        payoffRatio: 0,
+        favorablePct: 0,
+        sniperPct: 0,
+        toxicPct: 0,
+        sniperCount: 0,
+        toxicCount: 0,
+        rollerCount: 0,
+        scratchCount: 0,
+      };
+    }
+
+    const { midMae, midMfe } = qualityMatrixBounds();
+    let favorableCount = 0;
+    let sniperCount = 0;
+    let toxicCount = 0;
+    let rollerCount = 0;
+    let scratchCount = 0;
+    let totalMae = 0;
+    let totalMfe = 0;
+
+    for (const t of list) {
+      const { mae, mfe } = getTradeValues(t);
+      totalMae += mae;
+      totalMfe += mfe;
+
+      if (mfe > mae) favorableCount++;
+
+      // Quadrants based on strategy median/average
+      if (mae <= midMae && mfe >= midMfe) sniperCount++;
+      else if (mae > midMae && mfe < midMfe) toxicCount++;
+      else if (mae > midMae && mfe >= midMfe) rollerCount++;
+      else scratchCount++;
+    }
+
+    const payoffRatio = totalMae > 0 ? (totalMfe / totalMae) : 1.0;
+    const total = list.length;
+
+    return {
+      payoffRatio: Number(payoffRatio.toFixed(2)),
+      favorablePct: Number(((favorableCount / total) * 100).toFixed(1)),
+      sniperPct: Number(((sniperCount / total) * 100).toFixed(1)),
+      toxicPct: Number(((toxicCount / total) * 100).toFixed(1)),
+      sniperCount,
+      toxicCount,
+      rollerCount,
+      scratchCount,
+    };
+  };
+
   return (
     <div class="space-y-5">
       
-      {/* Top Header & Unit Selector */}
+      {/* Top Header & View / Unit Selectors */}
       <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div class="flex items-center gap-2.5">
@@ -103,196 +194,331 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
             </div>
             <div>
               <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                Trade Excursion Analytics (MAE & MFE)
+                Trade Excursion Analytics & Quality Matrix
                 <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                  Stop Loss & Target Optimization
+                  MAE & MFE Suite
                 </span>
               </h3>
               <p class="text-xs text-slate-400">
-                Measures unrealized drawdowns (MAE) and peak unrealized gains (MFE) during each trade's active lifetime.
+                Measure intra-trade drawdowns (MAE), peak gains (MFE), and assess entry timing quality.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Unit Selector Toggle */}
-        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
-          <button
-            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              unitMode() === 'auto'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-            onClick={() => setUnitMode('auto')}
-          >
-            Mode Sync ({props.mode === 'r' ? 'R' : '$'})
-          </button>
-          <button
-            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              unitMode() === 'pips'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-            onClick={() => setUnitMode('pips')}
-          >
-            Pips / Points
-          </button>
+        {/* View Switcher & Unit Toggles */}
+        <div class="flex flex-wrap items-center gap-2">
+          {/* Chart View Toggle */}
+          <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+            <button
+              class={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                activeView() === 'dual'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              onClick={() => setActiveView('dual')}
+            >
+              <Layers size={13} />
+              <span>Dual Excursions vs. Return</span>
+            </button>
+            <button
+              class={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                activeView() === 'quality_matrix'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
+                  : 'text-purple-300 hover:text-white'
+              }`}
+              onClick={() => setActiveView('quality_matrix')}
+            >
+              <Crosshair size={13} />
+              <span>Trade Quality Matrix (MFE vs MAE)</span>
+            </button>
+          </div>
+
+          {/* Unit Toggle */}
+          <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+            <button
+              class={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                unitMode() === 'auto'
+                  ? 'bg-slate-800 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              onClick={() => setUnitMode('auto')}
+            >
+              Mode Sync ({props.mode === 'r' ? 'R' : '$'})
+            </button>
+            <button
+              class={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                unitMode() === 'pips'
+                  ? 'bg-slate-800 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              onClick={() => setUnitMode('pips')}
+            >
+              Pips
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 4 Quantitative Insight Cards */}
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
-        {/* Card 1: Optimal SL Threshold */}
-        <div class="bg-slate-900/90 border border-emerald-500/30 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between text-xs text-emerald-400 font-semibold mb-1">
-              <span class="uppercase tracking-wider">Optimal SL Cutoff</span>
-              <ShieldAlert size={15} />
-            </div>
-            <div class="text-2xl font-black text-white mt-1">
-              {formatExcursion(
-                stats()?.optimal_sl_pips || 0,
-                stats()?.optimal_sl_amount || 0,
-                stats()?.optimal_sl_r || 0
-              )}
-            </div>
-          </div>
-          <p class="text-[11px] text-slate-400 mt-2">
-            90% of your winning trades never suffered a deeper drawdown than this. Wider SLs risk unnecessary losses.
-          </p>
-        </div>
-
-        {/* Card 2: MFE Capture Efficiency */}
-        <div class="bg-slate-900/90 border border-blue-500/30 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between text-xs text-blue-400 font-semibold mb-1">
-              <span class="uppercase tracking-wider">MFE Capture Efficiency</span>
-              <Target size={15} />
-            </div>
-            <div class="text-2xl font-black text-white mt-1">
-              {stats()?.mfe_capture_efficiency_pct?.toFixed(1) || '0.0'}%
-            </div>
-          </div>
-          <p class="text-[11px] text-slate-400 mt-2">
-            Average % of maximum available profit locked in before close on winning trades.
-          </p>
-        </div>
-
-        {/* Card 3: Average MAE */}
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
-              <span class="uppercase tracking-wider">Average MAE (Drawdown)</span>
-              <Activity size={15} />
-            </div>
-            <div class="text-2xl font-black text-rose-400 mt-1">
-              {formatExcursion(
-                stats()?.avg_mae_pips || 0,
-                stats()?.avg_mae_amount || 0,
-                stats()?.avg_mae_r || 0
-              )}
-            </div>
-          </div>
-          <p class="text-[11px] text-slate-400 mt-2">
-            Average intra-trade drawdown experienced across all {trades().length} trades.
-          </p>
-        </div>
-
-        {/* Card 4: Average MFE */}
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
-              <span class="uppercase tracking-wider">Average MFE (Peak Profit)</span>
-              <TrendingUp size={15} />
-            </div>
-            <div class="text-2xl font-black text-cyan-400 mt-1">
-              {formatExcursion(
-                stats()?.avg_mfe_pips || 0,
-                stats()?.avg_mfe_amount || 0,
-                stats()?.avg_mfe_r || 0
-              )}
-            </div>
-          </div>
-          <p class="text-[11px] text-slate-400 mt-2">
-            Average peak potential profit floating before trade closure.
-          </p>
-        </div>
-
-      </div>
-
-      {/* Dual Scatter Plots Grid */}
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        
-        {/* Plot 1: MAE vs Realized Return */}
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-sm flex flex-col gap-3">
-          <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
+      {/* Dynamic 4 Quantitative Insight Cards */}
+      <Show when={activeView() === 'dual'} fallback={
+        /* Scorecards for Trade Quality Matrix */
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          
+          <div class="bg-slate-900/90 border border-purple-500/30 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
             <div>
-              <h4 class="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                MAE vs. Realized Return (Stop Loss Analysis)
-              </h4>
-              <p class="text-[11px] text-slate-400">X: Max Drawdown (MAE) • Y: Realized Return</p>
+              <div class="flex items-center justify-between text-xs text-purple-300 font-semibold mb-1">
+                <span class="uppercase tracking-wider">Potential Payoff Ratio</span>
+                <Sparkles size={15} />
+              </div>
+              <div class="text-2xl font-black text-white mt-1">
+                {qualityMetrics().payoffRatio}x
+              </div>
             </div>
-            <div class="flex items-center gap-2 text-[10px]">
-              <span class="flex items-center gap-1 text-emerald-400"><span class="h-2 w-2 rounded-full bg-emerald-400"></span> Winner</span>
-              <span class="flex items-center gap-1 text-rose-400"><span class="h-2 w-2 rounded-full bg-rose-400"></span> Loser</span>
+            <p class="text-[11px] text-slate-400 mt-2">
+              Average MFE divided by Average MAE. Measures natural upside asymmetry during open trades.
+            </p>
+          </div>
+
+          <div class="bg-slate-900/90 border border-emerald-500/30 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between text-xs text-emerald-400 font-semibold mb-1">
+                <span class="uppercase tracking-wider">Favorable Asymmetry Rate</span>
+                <TrendingUp size={15} />
+              </div>
+              <div class="text-2xl font-black text-emerald-400 mt-1">
+                {qualityMetrics().favorablePct}%
+              </div>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">
+              Percentage of trades where peak upside exceeded adverse drawdown (MFE &gt; MAE).
+            </p>
+          </div>
+
+          <div class="bg-slate-900/90 border border-cyan-500/30 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between text-xs text-cyan-400 font-semibold mb-1">
+                <span class="uppercase tracking-wider">Clean Entry Rate (Sniper)</span>
+                <Crosshair size={15} />
+              </div>
+              <div class="text-2xl font-black text-cyan-400 mt-1">
+                {qualityMetrics().sniperPct}%
+              </div>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">
+              Trades landing in the High MFE / Low MAE quadrant ({qualityMetrics().sniperCount} trades).
+            </p>
+          </div>
+
+          <div class="bg-slate-900/90 border border-rose-500/30 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between text-xs text-rose-400 font-semibold mb-1">
+                <span class="uppercase tracking-wider">Toxic Trade Rate (Bleeders)</span>
+                <AlertTriangle size={15} />
+              </div>
+              <div class="text-2xl font-black text-rose-400 mt-1">
+                {qualityMetrics().toxicPct}%
+              </div>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">
+              Trades with deep drawdowns and minimal upside potential ({qualityMetrics().toxicCount} trades).
+            </p>
+          </div>
+
+        </div>
+      }>
+        {/* Scorecards for Standard Dual Plots */}
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          
+          <div class="bg-slate-900/90 border border-emerald-500/30 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between text-xs text-emerald-400 font-semibold mb-1">
+                <span class="uppercase tracking-wider">Optimal SL Cutoff</span>
+                <ShieldAlert size={15} />
+              </div>
+              <div class="text-2xl font-black text-white mt-1">
+                {formatExcursion(
+                  stats()?.optimal_sl_pips || 0,
+                  stats()?.optimal_sl_amount || 0,
+                  stats()?.optimal_sl_r || 0
+                )}
+              </div>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">
+              90% of your winning trades never suffered a deeper drawdown than this.
+            </p>
+          </div>
+
+          <div class="bg-slate-900/90 border border-blue-500/30 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between text-xs text-blue-400 font-semibold mb-1">
+                <span class="uppercase tracking-wider">MFE Capture Efficiency</span>
+                <Target size={15} />
+              </div>
+              <div class="text-2xl font-black text-white mt-1">
+                {stats()?.mfe_capture_efficiency_pct?.toFixed(1) || '0.0'}%
+              </div>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">
+              Average % of maximum available profit locked in before close on winning trades.
+            </p>
+          </div>
+
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
+                <span class="uppercase tracking-wider">Average MAE (Drawdown)</span>
+                <Activity size={15} />
+              </div>
+              <div class="text-2xl font-black text-rose-400 mt-1">
+                {formatExcursion(
+                  stats()?.avg_mae_pips || 0,
+                  stats()?.avg_mae_amount || 0,
+                  stats()?.avg_mae_r || 0
+                )}
+              </div>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">
+              Average intra-trade drawdown experienced across all {trades().length} trades.
+            </p>
+          </div>
+
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
+                <span class="uppercase tracking-wider">Average MFE (Peak Profit)</span>
+                <TrendingUp size={15} />
+              </div>
+              <div class="text-2xl font-black text-cyan-400 mt-1">
+                {formatExcursion(
+                  stats()?.avg_mfe_pips || 0,
+                  stats()?.avg_mfe_amount || 0,
+                  stats()?.avg_mfe_r || 0
+                )}
+              </div>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">
+              Average peak potential profit floating before trade closure.
+            </p>
+          </div>
+
+        </div>
+      </Show>
+
+      {/* Chart Views */}
+      <Show when={activeView() === 'dual'} fallback={
+        /* Trade Quality Matrix (MFE vs MAE) Full-Width View */
+        <div class="bg-slate-900/90 border border-purple-500/20 rounded-2xl p-5 shadow-xl backdrop-blur-sm space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+            <div>
+              <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                Trade Quality Matrix: MFE vs. MAE
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  Entry Quality & Asymmetry Map
+                </span>
+              </h4>
+              <p class="text-xs text-slate-400">
+                X-Axis: Intra-trade Drawdown (MAE) • Y-Axis: Peak Potential Profit (MFE)
+              </p>
+            </div>
+            <div class="flex items-center gap-3 text-xs">
+              <span class="flex items-center gap-1.5 text-purple-300 font-mono text-[11px]">
+                <span class="h-2 w-2 rounded-full bg-purple-400"></span> Diagonal: MFE = MAE (1:1 Ratio)
+              </span>
             </div>
           </div>
 
-          {/* SVG Canvas Plot */}
-          <div class="w-full h-80 bg-slate-950 rounded-xl relative border border-slate-850 p-4 select-none">
+          {/* Full-width SVG Quadrant Map */}
+          <div class="w-full h-96 bg-slate-950 rounded-xl relative border border-slate-850 p-4 select-none">
             {(() => {
-              const b = maeChartBounds();
-              const w = 480;
-              const h = 260;
-              const padLeft = 45;
-              const padBottom = 30;
-              const plotW = w - padLeft - 15;
-              const plotH = h - padBottom - 15;
+              const b = qualityMatrixBounds();
+              const q = qualityMetrics();
+              const w = 800;
+              const h = 340;
+              const padLeft = 55;
+              const padBottom = 35;
+              const plotW = w - padLeft - 20;
+              const plotH = h - padBottom - 20;
 
-              // Zero return line Y coordinate
-              const zeroY = 15 + plotH * (b.maxRet / (b.maxRet - b.minRet));
+              // Diagonal 1:1 line endpoints
+              const diagX2 = padLeft + plotW;
+              const diagY2 = 20; // top right
 
-              // Optimal SL threshold line X coordinate
-              const optSLVal = isPipsMode()
-                ? (stats()?.optimal_sl_pips || 0)
-                : (isRMode() ? (stats()?.optimal_sl_r || 0) : (stats()?.optimal_sl_amount || 0));
-              const optSLX = padLeft + (optSLVal / b.maxMae) * plotW;
+              // Mid divider coordinates
+              const midX = padLeft + (b.midMae / b.maxVal) * plotW;
+              const midY = 20 + plotH * (1 - (b.midMfe / b.maxVal));
 
               return (
                 <svg viewBox={`0 0 ${w} ${h}`} class="w-full h-full overflow-visible">
-                  {/* Grid Lines */}
-                  <line x1={padLeft} y1={zeroY} x2={padLeft + plotW} y2={zeroY} stroke="#334155" stroke-width="1.5" stroke-dasharray="3 3" />
-                  <line x1={padLeft} y1="15" x2={padLeft} y2={15 + plotH} stroke="#334155" stroke-width="1" />
-                  <line x1={padLeft} y1={15 + plotH} x2={padLeft + plotW} y2={15 + plotH} stroke="#334155" stroke-width="1" />
+                  {/* Quadrant Background Tints */}
+                  {/* Top-Left: Clean / Sniper */}
+                  <rect x={padLeft} y="20" width={midX - padLeft} height={midY - 20} fill="#10b981" fill-opacity="0.04" />
+                  {/* Top-Right: Rollercoaster */}
+                  <rect x={midX} y="20" width={padLeft + plotW - midX} height={midY - 20} fill="#3b82f6" fill-opacity="0.04" />
+                  {/* Bottom-Left: Scratch / Stalled */}
+                  <rect x={padLeft} y={midY} width={midX - padLeft} height={20 + plotH - midY} fill="#64748b" fill-opacity="0.04" />
+                  {/* Bottom-Right: Toxic / Bleeders */}
+                  <rect x={midX} y={midY} width={padLeft + plotW - midX} height={20 + plotH - midY} fill="#f43f5e" fill-opacity="0.05" />
 
-                  {/* Optimal SL Guideline */}
-                  {optSLVal > 0 && optSLX <= padLeft + plotW && (
-                    <g>
-                      <line x1={optSLX} y1="15" x2={optSLX} y2={15 + plotH} stroke="#10b981" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.7" />
-                      <text x={optSLX + 3} y="25" fill="#10b981" font-size="9" font-family="monospace">
-                        90% SL Cutoff
-                      </text>
-                    </g>
-                  )}
+                  {/* Quadrant Watermark Labels */}
+                  <g opacity="0.6">
+                    <text x={padLeft + 15} y="40" fill="#10b981" font-size="11" font-weight="bold">
+                      CLEAN / SNIPER ({q.sniperPct}%)
+                    </text>
+                    <text x={padLeft + 15} y="55" fill="#6ee7b7" font-size="9">
+                      Low Drawdown, High Peak Profit
+                    </text>
 
-                  {/* Scatter Points */}
+                    <text x={padLeft + plotW - 15} y="40" fill="#60a5fa" font-size="11" font-weight="bold" text-anchor="end">
+                      ROLLERCOASTER ({((q.rollerCount / trades().length) * 100).toFixed(1)}%)
+                    </text>
+                    <text x={padLeft + plotW - 15} y="55" fill="#93c5fd" font-size="9" text-anchor="end">
+                      High Drawdown, High Potential
+                    </text>
+
+                    <text x={padLeft + 15} y={20 + plotH - 25} fill="#94a3b8" font-size="11" font-weight="bold">
+                      SCRATCH / NOISE ({((q.scratchCount / trades().length) * 100).toFixed(1)}%)
+                    </text>
+
+                    <text x={padLeft + plotW - 15} y={20 + plotH - 25} fill="#f43f5e" font-size="11" font-weight="bold" text-anchor="end">
+                      TOXIC / BLEEDERS ({q.toxicPct}%)
+                    </text>
+                    <text x={padLeft + plotW - 15} y={20 + plotH - 10} fill="#fda4af" font-size="9" text-anchor="end">
+                      Severe Drawdown, Zero Upside
+                    </text>
+                  </g>
+
+                  {/* 1:1 Diagonal Line (MFE = MAE) */}
+                  <line x1={padLeft} y1={20 + plotH} x2={diagX2} y2={diagY2} stroke="#c084fc" stroke-width="1.8" stroke-dasharray="4 4" opacity="0.8" />
+                  <text x={diagX2 - 10} y={diagY2 + 15} fill="#c084fc" font-size="10" font-family="monospace" text-anchor="end">
+                    y = x (MFE = MAE)
+                  </text>
+
+                  {/* Dynamic Average Dividers */}
+                  <line x1={midX} y1="20" x2={midX} y2={20 + plotH} stroke="#475569" stroke-width="1" stroke-dasharray="2 2" opacity="0.6" />
+                  <line x1={padLeft} y1={midY} x2={padLeft + plotW} y2={midY} stroke="#475569" stroke-width="1" stroke-dasharray="2 2" opacity="0.6" />
+
+                  {/* Axes */}
+                  <line x1={padLeft} y1="20" x2={padLeft} y2={20 + plotH} stroke="#334155" stroke-width="1.5" />
+                  <line x1={padLeft} y1={20 + plotH} x2={padLeft + plotW} y2={20 + plotH} stroke="#334155" stroke-width="1.5" />
+
+                  {/* Scatter Circles */}
                   <For each={trades()}>
                     {(t) => {
-                      const { mae, ret } = getTradeValues(t);
-                      const cx = padLeft + (mae / b.maxMae) * plotW;
-                      const cy = 15 + plotH * ((b.maxRet - ret) / (b.maxRet - b.minRet));
-                      const isWin = ret >= 0;
+                      const { mae, mfe } = getTradeValues(t);
+                      const cx = padLeft + (mae / b.maxVal) * plotW;
+                      const cy = 20 + plotH * (1 - (mfe / b.maxVal));
+                      const isFavorable = mfe >= mae;
 
                       return (
                         <circle
                           cx={cx}
                           cy={cy}
-                          r={hoveredTrade()?.ticket === t.ticket ? 6 : 4}
-                          fill={isWin ? '#10b981' : '#f43f5e'}
-                          fill-opacity="0.8"
-                          stroke={hoveredTrade()?.ticket === t.ticket ? '#ffffff' : (isWin ? '#059669' : '#e11d48')}
-                          stroke-width="1.5"
+                          r={hoveredTrade()?.ticket === t.ticket ? 7 : 5}
+                          fill={isFavorable ? '#10b981' : '#f43f5e'}
+                          fill-opacity="0.85"
+                          stroke={hoveredTrade()?.ticket === t.ticket ? '#ffffff' : (isFavorable ? '#059669' : '#e11d48')}
+                          stroke-width="1.8"
                           class="cursor-pointer transition-all hover:scale-125"
                           onMouseEnter={(e) => {
                             setHoveredTrade(t);
@@ -305,159 +531,254 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                     }}
                   </For>
 
-                  {/* Labels */}
-                  <text x={padLeft} y={15 + plotH + 20} fill="#64748b" font-size="10">0</text>
-                  <text x={padLeft + plotW} y={15 + plotH + 20} fill="#64748b" font-size="10" text-anchor="end">
-                    {b.maxMae.toFixed(1)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MAE)
+                  {/* Axis Labels */}
+                  <text x={padLeft} y={20 + plotH + 20} fill="#64748b" font-size="10">0</text>
+                  <text x={padLeft + plotW} y={20 + plotH + 20} fill="#64748b" font-size="10" text-anchor="end">
+                    {b.maxVal.toFixed(1)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MAE Drawdown)
                   </text>
-                  <text x={padLeft - 8} y="20" fill="#64748b" font-size="10" text-anchor="end">
-                    +{b.maxRet.toFixed(1)}
+                  <text x={padLeft - 10} y="25" fill="#64748b" font-size="10" text-anchor="end">
+                    {b.maxVal.toFixed(1)}
                   </text>
-                  <text x={padLeft - 8} y={15 + plotH} fill="#64748b" font-size="10" text-anchor="end">
-                    {b.minRet.toFixed(1)}
+                  <text x={padLeft - 10} y={20 + plotH} fill="#64748b" font-size="10" text-anchor="end">
+                    0 (MFE)
                   </text>
                 </svg>
               );
             })()}
           </div>
         </div>
-
-        {/* Plot 2: MFE vs Realized Return */}
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-sm flex flex-col gap-3">
-          <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
-            <div>
-              <h4 class="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                MFE vs. Realized Return (Exit & Target Efficiency)
-              </h4>
-              <p class="text-[11px] text-slate-400">X: Max Potential Profit (MFE) • Y: Realized Return</p>
+      }>
+        {/* Standard Dual Scatter Plots Grid */}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          
+          {/* Plot 1: MAE vs Realized Return */}
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-sm flex flex-col gap-3">
+            <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <div>
+                <h4 class="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                  MAE vs. Realized Return (Stop Loss Analysis)
+                </h4>
+                <p class="text-[11px] text-slate-400">X: Max Drawdown (MAE) • Y: Realized Return</p>
+              </div>
+              <div class="flex items-center gap-2 text-[10px]">
+                <span class="flex items-center gap-1 text-emerald-400"><span class="h-2 w-2 rounded-full bg-emerald-400"></span> Winner</span>
+                <span class="flex items-center gap-1 text-rose-400"><span class="h-2 w-2 rounded-full bg-rose-400"></span> Loser</span>
+              </div>
             </div>
-            <span class="text-[10px] text-slate-400 font-mono">Diagonal: 100% Exit Efficiency</span>
-          </div>
 
-          {/* SVG Canvas Plot */}
-          <div class="w-full h-80 bg-slate-950 rounded-xl relative border border-slate-850 p-4 select-none">
-            {(() => {
-              const b = mfeChartBounds();
-              const w = 480;
-              const h = 260;
-              const padLeft = 45;
-              const padBottom = 30;
-              const plotW = w - padLeft - 15;
-              const plotH = h - padBottom - 15;
+            <div class="w-full h-80 bg-slate-950 rounded-xl relative border border-slate-850 p-4 select-none">
+              {(() => {
+                const b = maeChartBounds();
+                const w = 480;
+                const h = 260;
+                const padLeft = 45;
+                const padBottom = 30;
+                const plotW = w - padLeft - 15;
+                const plotH = h - padBottom - 15;
 
-              // Zero return line Y coordinate
-              const zeroY = 15 + plotH * (b.maxRet / (b.maxRet - b.minRet));
+                const zeroY = 15 + plotH * (b.maxRet / (b.maxRet - b.minRet));
+                const optSLVal = isPipsMode()
+                  ? (stats()?.optimal_sl_pips || 0)
+                  : (isRMode() ? (stats()?.optimal_sl_r || 0) : (stats()?.optimal_sl_amount || 0));
+                const optSLX = padLeft + (optSLVal / b.maxMae) * plotW;
 
-              return (
-                <svg viewBox={`0 0 ${w} ${h}`} class="w-full h-full overflow-visible">
-                  {/* Grid Lines */}
-                  <line x1={padLeft} y1={zeroY} x2={padLeft + plotW} y2={zeroY} stroke="#334155" stroke-width="1.5" stroke-dasharray="3 3" />
-                  <line x1={padLeft} y1="15" x2={padLeft} y2={15 + plotH} stroke="#334155" stroke-width="1" />
-                  <line x1={padLeft} y1={15 + plotH} x2={padLeft + plotW} y2={15 + plotH} stroke="#334155" stroke-width="1" />
+                return (
+                  <svg viewBox={`0 0 ${w} ${h}`} class="w-full h-full overflow-visible">
+                    <line x1={padLeft} y1={zeroY} x2={padLeft + plotW} y2={zeroY} stroke="#334155" stroke-width="1.5" stroke-dasharray="3 3" />
+                    <line x1={padLeft} y1="15" x2={padLeft} y2={15 + plotH} stroke="#334155" stroke-width="1" />
+                    <line x1={padLeft} y1={15 + plotH} x2={padLeft + plotW} y2={15 + plotH} stroke="#334155" stroke-width="1" />
 
-                  {/* 100% Capture Diagonal Reference Line */}
-                  {(() => {
-                    const maxDiag = Math.min(b.maxMfe, b.maxRet);
-                    const x2 = padLeft + (maxDiag / b.maxMfe) * plotW;
-                    const y2 = 15 + plotH * ((b.maxRet - maxDiag) / (b.maxRet - b.minRet));
-                    return (
+                    {optSLVal > 0 && optSLX <= padLeft + plotW && (
                       <g>
-                        <line x1={padLeft} y1={zeroY} x2={x2} y2={y2} stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.6" />
-                        <text x={x2 + 4} y={y2} fill="#38bdf8" font-size="9" font-family="monospace">
-                          y = x (Perfect Exit)
+                        <line x1={optSLX} y1="15" x2={optSLX} y2={15 + plotH} stroke="#10b981" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.7" />
+                        <text x={optSLX + 3} y="25" fill="#10b981" font-size="9" font-family="monospace">
+                          90% SL Cutoff
                         </text>
                       </g>
-                    );
-                  })()}
+                    )}
 
-                  {/* Scatter Points */}
-                  <For each={trades()}>
-                    {(t) => {
-                      const { mfe, ret } = getTradeValues(t);
-                      const cx = padLeft + (mfe / b.maxMfe) * plotW;
-                      const cy = 15 + plotH * ((b.maxRet - ret) / (b.maxRet - b.minRet));
-                      const isWin = ret >= 0;
+                    <For each={trades()}>
+                      {(t) => {
+                        const { mae, ret } = getTradeValues(t);
+                        const cx = padLeft + (mae / b.maxMae) * plotW;
+                        const cy = 15 + plotH * ((b.maxRet - ret) / (b.maxRet - b.minRet));
+                        const isWin = ret >= 0;
 
-                      return (
-                        <circle
-                          cx={cx}
-                          cy={cy}
-                          r={hoveredTrade()?.ticket === t.ticket ? 6 : 4}
-                          fill={isWin ? '#38bdf8' : '#f43f5e'}
-                          fill-opacity="0.8"
-                          stroke={hoveredTrade()?.ticket === t.ticket ? '#ffffff' : (isWin ? '#0284c7' : '#e11d48')}
-                          stroke-width="1.5"
-                          class="cursor-pointer transition-all hover:scale-125"
-                          onMouseEnter={(e) => {
-                            setHoveredTrade(t);
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setMousePos({ x: rect.left + window.scrollX, y: rect.top + window.scrollY - 10 });
-                          }}
-                          onMouseLeave={() => setHoveredTrade(null)}
-                        />
-                      );
-                    }}
-                  </For>
+                        return (
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r={hoveredTrade()?.ticket === t.ticket ? 6 : 4}
+                            fill={isWin ? '#10b981' : '#f43f5e'}
+                            fill-opacity="0.8"
+                            stroke={hoveredTrade()?.ticket === t.ticket ? '#ffffff' : (isWin ? '#059669' : '#e11d48')}
+                            stroke-width="1.5"
+                            class="cursor-pointer transition-all hover:scale-125"
+                            onMouseEnter={(e) => {
+                              setHoveredTrade(t);
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setMousePos({ x: rect.left + window.scrollX, y: rect.top + window.scrollY - 10 });
+                            }}
+                            onMouseLeave={() => setHoveredTrade(null)}
+                          />
+                        );
+                      }}
+                    </For>
 
-                  {/* Labels */}
-                  <text x={padLeft} y={15 + plotH + 20} fill="#64748b" font-size="10">0</text>
-                  <text x={padLeft + plotW} y={15 + plotH + 20} fill="#64748b" font-size="10" text-anchor="end">
-                    {b.maxMfe.toFixed(1)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MFE)
-                  </text>
-                  <text x={padLeft - 8} y="20" fill="#64748b" font-size="10" text-anchor="end">
-                    +{b.maxRet.toFixed(1)}
-                  </text>
-                  <text x={padLeft - 8} y={15 + plotH} fill="#64748b" font-size="10" text-anchor="end">
-                    {b.minRet.toFixed(1)}
-                  </text>
-                </svg>
-              );
-            })()}
+                    <text x={padLeft} y={15 + plotH + 20} fill="#64748b" font-size="10">0</text>
+                    <text x={padLeft + plotW} y={15 + plotH + 20} fill="#64748b" font-size="10" text-anchor="end">
+                      {b.maxMae.toFixed(1)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MAE)
+                    </text>
+                    <text x={padLeft - 8} y="20" fill="#64748b" font-size="10" text-anchor="end">
+                      +{b.maxRet.toFixed(1)}
+                    </text>
+                    <text x={padLeft - 8} y={15 + plotH} fill="#64748b" font-size="10" text-anchor="end">
+                      {b.minRet.toFixed(1)}
+                    </text>
+                  </svg>
+                );
+              })()}
+            </div>
           </div>
-        </div>
 
-      </div>
+          {/* Plot 2: MFE vs Realized Return */}
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-sm flex flex-col gap-3">
+            <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <div>
+                <h4 class="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                  MFE vs. Realized Return (Exit & Target Efficiency)
+                </h4>
+                <p class="text-[11px] text-slate-400">X: Max Potential Profit (MFE) • Y: Realized Return</p>
+              </div>
+              <span class="text-[10px] text-slate-400 font-mono">Diagonal: 100% Exit Efficiency</span>
+            </div>
+
+            <div class="w-full h-80 bg-slate-950 rounded-xl relative border border-slate-850 p-4 select-none">
+              {(() => {
+                const b = mfeChartBounds();
+                const w = 480;
+                const h = 260;
+                const padLeft = 45;
+                const padBottom = 30;
+                const plotW = w - padLeft - 15;
+                const plotH = h - padBottom - 15;
+
+                const zeroY = 15 + plotH * (b.maxRet / (b.maxRet - b.minRet));
+
+                return (
+                  <svg viewBox={`0 0 ${w} ${h}`} class="w-full h-full overflow-visible">
+                    <line x1={padLeft} y1={zeroY} x2={padLeft + plotW} y2={zeroY} stroke="#334155" stroke-width="1.5" stroke-dasharray="3 3" />
+                    <line x1={padLeft} y1="15" x2={padLeft} y2={15 + plotH} stroke="#334155" stroke-width="1" />
+                    <line x1={padLeft} y1={15 + plotH} x2={padLeft + plotW} y2={15 + plotH} stroke="#334155" stroke-width="1" />
+
+                    {(() => {
+                      const maxDiag = Math.min(b.maxMfe, b.maxRet);
+                      const x2 = padLeft + (maxDiag / b.maxMfe) * plotW;
+                      const y2 = 15 + plotH * ((b.maxRet - maxDiag) / (b.maxRet - b.minRet));
+                      return (
+                        <g>
+                          <line x1={padLeft} y1={zeroY} x2={x2} y2={y2} stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.6" />
+                          <text x={x2 + 4} y={y2} fill="#38bdf8" font-size="9" font-family="monospace">
+                            y = x (Perfect Exit)
+                          </text>
+                        </g>
+                      );
+                    })()}
+
+                    <For each={trades()}>
+                      {(t) => {
+                        const { mfe, ret } = getTradeValues(t);
+                        const cx = padLeft + (mfe / b.maxMfe) * plotW;
+                        const cy = 15 + plotH * ((b.maxRet - ret) / (b.maxRet - b.minRet));
+                        const isWin = ret >= 0;
+
+                        return (
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r={hoveredTrade()?.ticket === t.ticket ? 6 : 4}
+                            fill={isWin ? '#38bdf8' : '#f43f5e'}
+                            fill-opacity="0.8"
+                            stroke={hoveredTrade()?.ticket === t.ticket ? '#ffffff' : (isWin ? '#0284c7' : '#e11d48')}
+                            stroke-width="1.5"
+                            class="cursor-pointer transition-all hover:scale-125"
+                            onMouseEnter={(e) => {
+                              setHoveredTrade(t);
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setMousePos({ x: rect.left + window.scrollX, y: rect.top + window.scrollY - 10 });
+                            }}
+                            onMouseLeave={() => setHoveredTrade(null)}
+                          />
+                        );
+                      }}
+                    </For>
+
+                    <text x={padLeft} y={15 + plotH + 20} fill="#64748b" font-size="10">0</text>
+                    <text x={padLeft + plotW} y={15 + plotH + 20} fill="#64748b" font-size="10" text-anchor="end">
+                      {b.maxMfe.toFixed(1)} {isPipsMode() ? 'pips' : (isRMode() ? 'R' : '$')} (MFE)
+                    </text>
+                    <text x={padLeft - 8} y="20" fill="#64748b" font-size="10" text-anchor="end">
+                      +{b.maxRet.toFixed(1)}
+                    </text>
+                    <text x={padLeft - 8} y={15 + plotH} fill="#64748b" font-size="10" text-anchor="end">
+                      {b.minRet.toFixed(1)}
+                    </text>
+                  </svg>
+                );
+              })()}
+            </div>
+          </div>
+
+        </div>
+      </Show>
 
       {/* Floating Hover Tooltip */}
       <Show when={hoveredTrade()}>
-        {(t) => (
-          <div
-            style={{
-              position: 'fixed',
-              left: `${mousePos().x}px`,
-              top: `${mousePos().y - 120}px`,
-              transform: 'translateX(-50%)',
-              'pointer-events': 'none',
-              'z-index': 9999,
-            }}
-            class="bg-slate-900 border border-slate-700 rounded-xl p-3 shadow-2xl text-xs space-y-1.5 w-56 backdrop-blur-md"
-          >
-            <div class="flex items-center justify-between border-b border-slate-800 pb-1 font-mono">
-              <span class="font-bold text-white">#{t().ticket} • {t().symbol}</span>
-              <span class={`font-bold px-1.5 py-0.2 rounded text-[10px] ${t().net_profit >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                {t().type === 0 ? 'BUY' : 'SELL'}
-              </span>
+        {(t) => {
+          const ratio = t().mae_amount > 0 ? (t().mfe_amount / t().mae_amount).toFixed(2) : '∞';
+          return (
+            <div
+              style={{
+                position: 'fixed',
+                left: `${mousePos().x}px`,
+                top: `${mousePos().y - 130}px`,
+                transform: 'translateX(-50%)',
+                'pointer-events': 'none',
+                'z-index': 9999,
+              }}
+              class="bg-slate-900 border border-slate-700 rounded-xl p-3 shadow-2xl text-xs space-y-1.5 w-60 backdrop-blur-md"
+            >
+              <div class="flex items-center justify-between border-b border-slate-800 pb-1 font-mono">
+                <span class="font-bold text-white">#{t().ticket} • {t().symbol}</span>
+                <span class={`font-bold px-1.5 py-0.2 rounded text-[10px] ${t().net_profit >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                  {t().type === 0 ? 'BUY' : 'SELL'}
+                </span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Realized Return:</span>
+                <span class={`font-bold ${t().net_profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {formatReturn(t())}
+                </span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Max Adverse (MAE):</span>
+                <span class="font-mono text-rose-400">
+                  {formatExcursion(t().mae_pips, t().mae_amount, t().mae_r)}
+                </span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Max Favorable (MFE):</span>
+                <span class="font-mono text-cyan-400">
+                  {formatExcursion(t().mfe_pips, t().mfe_amount, t().mfe_r)}
+                </span>
+              </div>
+              <div class="flex justify-between border-t border-slate-800 pt-1 text-[11px]">
+                <span class="text-purple-300">Intra-trade Ratio (MFE/MAE):</span>
+                <span class="font-mono font-bold text-purple-300">{ratio}x</span>
+              </div>
             </div>
-            <div class="flex justify-between">
-              <span class="text-slate-400">Realized Return:</span>
-              <span class={`font-bold ${t().net_profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {formatReturn(t())}
-              </span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-slate-400">Max Adverse (MAE):</span>
-              <span class="font-mono text-rose-400">
-                {formatExcursion(t().mae_pips, t().mae_amount, t().mae_r)}
-              </span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-slate-400">Max Favorable (MFE):</span>
-              <span class="font-mono text-cyan-400">
-                {formatExcursion(t().mfe_pips, t().mfe_amount, t().mfe_r)}
-              </span>
-            </div>
-          </div>
-        )}
+          );
+        }}
       </Show>
 
       {/* Trade Excursions Breakdown Table */}
@@ -483,6 +804,7 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
               <th class="py-2 px-2">Realized Return</th>
               <th class="py-2 px-2">MAE (Drawdown)</th>
               <th class="py-2 px-2">MFE (Peak Profit)</th>
+              <th class="py-2 px-2 text-right">Intra Ratio</th>
               <th class="py-2 px-2 text-right">MFE Capture %</th>
             </tr>
           </thead>
@@ -491,6 +813,7 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
               {(t) => {
                 const isWin = t.net_profit >= 0;
                 const capturePct = t.mfe_amount > 0 && isWin ? Math.min(100, Math.max(0, (t.net_profit / t.mfe_amount) * 100)) : 0;
+                const ratio = t.mae_amount > 0 ? (t.mfe_amount / t.mae_amount).toFixed(2) : '∞';
                 return (
                   <tr class="hover:bg-slate-850/50 transition-colors">
                     <td class="py-2 px-2 font-mono text-slate-400">#{t.ticket}</td>
@@ -510,6 +833,9 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                     </td>
                     <td class="py-2 px-2 font-mono text-cyan-400">
                       {formatExcursion(t.mfe_pips, t.mfe_amount, t.mfe_r)}
+                    </td>
+                    <td class="py-2 px-2 text-right font-mono text-purple-300 font-semibold">
+                      {ratio}x
                     </td>
                     <td class="py-2 px-2 text-right font-mono font-semibold">
                       <span class={isWin ? 'text-blue-400' : 'text-slate-500'}>
