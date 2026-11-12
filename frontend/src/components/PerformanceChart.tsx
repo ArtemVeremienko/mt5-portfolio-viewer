@@ -24,7 +24,8 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   // Active series references for dynamic cleanup
   let seriesList: ISeriesApi<any>[] = [];
   let activeBarSeries: ISeriesApi<any> | null = null;
-  let barDataMap = new Map<number, { time: any; value: number; dimmedColor: string; hoverColor: string }>();
+  let activeHighlightSeries: ISeriesApi<any> | null = null;
+  let barDataMap = new Map<number, { time: any; value: number; hoverColor: string }>();
   let lastHoveredTime: number | null = null;
 
   const [activeTab, setActiveTab] = createSignal<ChartTab>('growth');
@@ -106,22 +107,27 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       },
     });
 
-    // Crosshair hover: illuminate hovered change bar to vivid opacity O(1)
+    // Crosshair hover: illuminate hovered change bar using an error-free overlay series
     chart.subscribeCrosshairMove((param) => {
-      if (!activeBarSeries || !barDataMap.size) return;
+      if (!activeHighlightSeries || !barDataMap.size) return;
       const time = param.time as number | undefined;
       if (time !== undefined && barDataMap.has(time)) {
-        if (lastHoveredTime !== null && lastHoveredTime !== time && barDataMap.has(lastHoveredTime)) {
-          const prev = barDataMap.get(lastHoveredTime)!;
-          activeBarSeries.update({ time: prev.time, value: prev.value, color: prev.dimmedColor });
+        if (time !== lastHoveredTime) {
+          const curr = barDataMap.get(time)!;
+          try {
+            activeHighlightSeries.setData([{ time: curr.time, value: curr.value, color: curr.hoverColor }]);
+          } catch (e) {
+            // Safe guard against any canvas edge cases
+          }
+          lastHoveredTime = time;
         }
-        const curr = barDataMap.get(time)!;
-        activeBarSeries.update({ time: curr.time, value: curr.value, color: curr.hoverColor });
-        lastHoveredTime = time;
       } else {
-        if (lastHoveredTime !== null && barDataMap.has(lastHoveredTime)) {
-          const prev = barDataMap.get(lastHoveredTime)!;
-          activeBarSeries.update({ time: prev.time, value: prev.value, color: prev.dimmedColor });
+        if (lastHoveredTime !== null) {
+          try {
+            activeHighlightSeries.setData([]);
+          } catch (e) {
+            // Safe guard against any canvas edge cases
+          }
           lastHoveredTime = null;
         }
       }
@@ -141,6 +147,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     }
     seriesList = [];
     activeBarSeries = null;
+    activeHighlightSeries = null;
     barDataMap.clear();
     lastHoveredTime = null;
   };
@@ -203,7 +210,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           const val = d.change_pct ?? 0;
           const dimmedColor = val >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)';
           const hoverColor = val >= 0 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(244, 63, 94, 0.95)';
-          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, dimmedColor, hoverColor });
+          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, hoverColor });
           return {
             time: d.timestamp as any,
             value: val,
@@ -212,6 +219,17 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         });
         barSeries.setData(barItems);
         seriesList.push(barSeries);
+
+        // Overlay series for hover highlight
+        const highlightSeries = chart.addSeries(HistogramSeries, {
+          priceFormat: { type: 'percent' },
+          priceScaleId: 'left',
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        highlightSeries.setData([]);
+        activeHighlightSeries = highlightSeries;
+        seriesList.push(highlightSeries);
       }
 
       // 2. Growth (%) Area/Line on right scale (upper region)
@@ -254,7 +272,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           const val = d.change_amount ?? 0;
           const dimmedColor = val >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)';
           const hoverColor = val >= 0 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(244, 63, 94, 0.95)';
-          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, dimmedColor, hoverColor });
+          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, hoverColor });
           return {
             time: d.timestamp as any,
             value: val,
@@ -263,6 +281,15 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         });
         barSeries.setData(barItems);
         seriesList.push(barSeries);
+
+        const highlightSeries = chart.addSeries(HistogramSeries, {
+          priceScaleId: 'left',
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        highlightSeries.setData([]);
+        activeHighlightSeries = highlightSeries;
+        seriesList.push(highlightSeries);
       }
 
       // 2. Balance Curve on right scale (upper region)
@@ -301,7 +328,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           const val = d.change_amount ?? 0;
           const dimmedColor = val >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)';
           const hoverColor = val >= 0 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(244, 63, 94, 0.95)';
-          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, dimmedColor, hoverColor });
+          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, hoverColor });
           return {
             time: d.timestamp as any,
             value: val,
@@ -310,6 +337,15 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         });
         barSeries.setData(barItems);
         seriesList.push(barSeries);
+
+        const highlightSeries = chart.addSeries(HistogramSeries, {
+          priceScaleId: 'left',
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        highlightSeries.setData([]);
+        activeHighlightSeries = highlightSeries;
+        seriesList.push(highlightSeries);
       }
 
       // 2. Cumulative Profit on right scale (upper region)
@@ -359,7 +395,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           const val = d.change_r ?? 0;
           const dimmedColor = val >= 0 ? 'rgba(168, 85, 247, 0.28)' : 'rgba(244, 63, 94, 0.28)';
           const hoverColor = val >= 0 ? 'rgba(168, 85, 247, 0.95)' : 'rgba(244, 63, 94, 0.95)';
-          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, dimmedColor, hoverColor });
+          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, hoverColor });
           return {
             time: d.timestamp as any,
             value: val,
@@ -368,6 +404,19 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         });
         barSeries.setData(barItems);
         seriesList.push(barSeries);
+
+        const highlightSeries = chart.addSeries(HistogramSeries, {
+          priceScaleId: 'left',
+          priceFormat: {
+            type: 'custom',
+            formatter: (p: number) => (p >= 0 ? '+' : '') + p.toFixed(2) + 'R',
+          },
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        highlightSeries.setData([]);
+        activeHighlightSeries = highlightSeries;
+        seriesList.push(highlightSeries);
       }
 
       // 2. Cumulative R on right scale (upper region)
