@@ -143,10 +143,10 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                   <th class="py-2.5 px-2 text-right">R-Multiple</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-slate-850">
+              <tbody class="divide-y divide-slate-800/60">
                 <For each={paginatedClosed()}>
                   {(t) => (
-                    <tr class="hover:bg-slate-850/50 transition-colors">
+                    <tr class="hover:bg-slate-800/30 transition-colors">
                       <td class="py-2 px-2 text-slate-400 font-mono">#{t.ticket}</td>
                       <td class="py-2 px-2 text-slate-300 font-mono text-[11px]">{formatTimestamp(t.time)}</td>
                       <td class="py-2 px-2 font-semibold">
@@ -218,7 +218,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                 <th class="py-2.5 px-2 text-right">Floating PnL</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-850">
+            <tbody class="divide-y divide-slate-800/60">
               <Show when={props.openTrades.length > 0} fallback={
                 <tr>
                   <td colspan="9" class="py-8 text-center text-slate-500">
@@ -228,7 +228,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
               }>
                 <For each={props.openTrades}>
                   {(pos) => (
-                    <tr class="hover:bg-slate-850/50 transition-colors">
+                    <tr class="hover:bg-slate-800/30 transition-colors">
                       <td class="py-2.5 px-2 text-slate-400 font-mono">#{pos.ticket}</td>
                       <td class="py-2.5 px-2 font-bold text-white font-mono">{pos.symbol}</td>
                       <td class="py-2.5 px-2 font-semibold">

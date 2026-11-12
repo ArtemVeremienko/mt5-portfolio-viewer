@@ -207,7 +207,7 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
                   }}
                   class={`min-h-[105px] sm:min-h-[120px] rounded-xl p-2.5 flex flex-col justify-between border transition-all relative select-none ${
                     !cell.isCurrentMonth
-                      ? 'bg-slate-950/40 border-slate-850/40 opacity-40 text-slate-600'
+                      ? 'bg-slate-950/40 border-slate-800/40 opacity-40 text-slate-600'
                       : hasTrades()
                         ? isProfit()
                           ? 'bg-[#132c25]/90 border-emerald-500/40 hover:border-emerald-400 hover:shadow-lg hover:shadow-emerald-950/40 cursor-pointer'
@@ -312,7 +312,7 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
                 {(deal) => {
                   const isWon = deal.profit >= 0;
                   return (
-                    <div class="pt-2.5 first:pt-0 flex items-center justify-between text-xs hover:bg-slate-850/40 p-2 rounded-xl transition-colors">
+                    <div class="pt-2.5 first:pt-0 flex items-center justify-between text-xs hover:bg-slate-800/30 p-2 rounded-xl transition-colors">
                       <div class="flex items-center gap-3">
                         <div class={`p-1.5 rounded-lg ${
                           isWon ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'

@@ -185,13 +185,13 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
             
             {/* Column 1 */}
-            <div class="space-y-0.5 bg-slate-950/40 p-3 rounded-xl border border-slate-850">
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+            <div class="space-y-0.5 bg-slate-950/40 p-3 rounded-xl border border-slate-800/80">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Trades:</span>
                 <span class="font-bold text-white text-sm font-mono">{s()?.total_trades || 0}</span>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-855/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Profitability:</span>
                 <div class="w-32 flex items-center gap-1.5">
                   <div class="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden flex shadow-inner">
@@ -212,26 +212,26 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 </div>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Pips:</span>
                 <span class="font-bold text-white font-mono">{s()?.total_pips?.toFixed(1) || '0.0'}</span>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Average Win:</span>
                 <span class="font-bold text-emerald-400 font-mono">
                   {formatPipsOrMoney(s()?.avg_win_pips || 0, s()?.avg_win || 0)}
                 </span>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Average Loss:</span>
                 <span class="font-bold text-rose-400 font-mono">
                   -{Math.abs(s()?.avg_loss_pips || 0).toFixed(1)} pips / -{formatMoney(Math.abs(s()?.avg_loss || 0))}
                 </span>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Lots:</span>
                 <span class="font-bold text-white font-mono">{s()?.total_lots?.toFixed(2) || '0.00'}</span>
               </div>
@@ -245,8 +245,8 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
             </div>
 
             {/* Column 2 */}
-            <div class="space-y-0.5 bg-slate-950/40 p-3 rounded-xl border border-slate-850">
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+            <div class="space-y-0.5 bg-slate-950/40 p-3 rounded-xl border border-slate-800/80">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Longs Won:</span>
                 <div class="font-mono text-slate-200">
                   <span class="text-slate-400">({s()?.long_won || 0}/{s()?.long_trades || 0})</span>{' '}
@@ -254,7 +254,7 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 </div>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Shorts Won:</span>
                 <div class="font-mono text-slate-200">
                   <span class="text-slate-400">({s()?.short_won || 0}/{s()?.short_trades || 0})</span>{' '}
@@ -262,7 +262,7 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 </div>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Best Trade ($):</span>
                 <div class="font-mono">
                   <Show when={s()?.best_trade_date}>
@@ -272,7 +272,7 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 </div>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Worst Trade ($):</span>
                 <div class="font-mono">
                   <Show when={s()?.worst_trade_date}>
@@ -282,7 +282,7 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 </div>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Best Trade (Pips):</span>
                 <div class="font-mono">
                   <Show when={s()?.best_trade_pips_date}>
@@ -292,7 +292,7 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 </div>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Worst Trade (Pips):</span>
                 <div class="font-mono">
                   <Show when={s()?.worst_trade_pips_date}>
@@ -309,29 +309,29 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
             </div>
 
             {/* Column 3 (Clean dotted underline tooltips with zero divider interference) */}
-            <div class="space-y-0.5 bg-slate-950/40 p-3 rounded-xl border border-slate-850">
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+            <div class="space-y-0.5 bg-slate-950/40 p-3 rounded-xl border border-slate-800/80">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title="Gross Profit divided by Gross Loss">
                   Profit Factor:
                 </span>
                 <span class="font-bold text-white font-mono text-sm">{s()?.profit_factor?.toFixed(2) || '0.00'}</span>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title="Standard deviation of trade net profits">
                   Standard Deviation:
                 </span>
                 <span class="font-bold text-white font-mono">${s()?.profit_std_dev?.toFixed(3) || '0.000'}</span>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title="Annualized Sharpe ratio based on trade returns">
                   Sharpe Ratio:
                 </span>
                 <span class="font-bold text-white font-mono">{s()?.sharpe_ratio?.toFixed(2) || '0.00'}</span>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title="Z-Score streak randomness test and probability of non-randomness">
                   Z-Score (Probability):
                 </span>
@@ -340,7 +340,7 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 </span>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title="Expected mathematical edge per trade">
                   Expectancy:
                 </span>
@@ -349,7 +349,7 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 </span>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-850/50 hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title="Average Holding Period Return per trade">
                   AHPR:
                 </span>
@@ -395,7 +395,7 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 </th>
 
                 {/* Total Header Group */}
-                <th class="py-2.5 px-2 text-center font-bold text-slate-200 bg-slate-850/50" colspan="5">
+                <th class="py-2.5 px-2 text-center font-bold text-slate-200 bg-slate-800/40" colspan="5">
                   <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/60">
                     Total
                   </span>
@@ -423,10 +423,10 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 <th class="py-1.5 px-3 text-center">Lost(%)</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-850/60 font-mono">
+            <tbody class="divide-y divide-slate-800/60 font-mono">
               <For each={props.currencySummary}>
                 {(row) => (
-                  <tr class="hover:bg-slate-850/40 transition-colors">
+                  <tr class="hover:bg-slate-800/30 transition-colors">
                     <td class="py-3 px-3 font-bold text-white text-xs border-r-2 border-slate-700/80">
                       {row.symbol}
                     </td>

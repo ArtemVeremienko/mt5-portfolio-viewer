@@ -500,7 +500,7 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
           </div>
 
           {/* Full-width SVG Quadrant Map */}
-          <div class="w-full h-96 bg-slate-950 rounded-xl relative border border-slate-850 p-4 select-none">
+          <div class="w-full h-96 bg-slate-950 rounded-xl relative border border-slate-800 p-4 select-none">
             {(() => {
               const b = qualityMatrixBounds();
               const q = qualityMetrics();
@@ -650,7 +650,7 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
               </div>
             </div>
 
-            <div class="w-full h-80 bg-slate-950 rounded-xl relative border border-slate-850 p-4 select-none">
+            <div class="w-full h-80 bg-slate-950 rounded-xl relative border border-slate-800 p-4 select-none">
               {(() => {
                 const b = maeChartBounds();
                 const w = 480;
@@ -748,7 +748,7 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
               <span class="text-[10px] text-slate-400 font-mono">Diagonal: 100% Exit Efficiency</span>
             </div>
 
-            <div class="w-full h-80 bg-slate-950 rounded-xl relative border border-slate-850 p-4 select-none">
+            <div class="w-full h-80 bg-slate-950 rounded-xl relative border border-slate-800 p-4 select-none">
               {(() => {
                 const b = mfeChartBounds();
                 const w = 480;
@@ -919,14 +919,14 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
               <th class="py-2.5 px-2 text-right">MFE Capture %</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-850">
+          <tbody class="divide-y divide-slate-800/60">
             <For each={trades().slice(0, 15)}>
               {(t) => {
                 const isWin = t.net_profit >= 0;
                 const capturePct = t.mfe_amount > 0 && isWin ? Math.min(100, Math.max(0, (t.net_profit / t.mfe_amount) * 100)) : 0;
                 const ratio = t.mae_amount > 0 ? (t.mfe_amount / t.mae_amount).toFixed(2) : '∞';
                 return (
-                  <tr class="hover:bg-slate-850/50 transition-colors">
+                  <tr class="hover:bg-slate-800/30 transition-colors">
                     <td class="py-2 px-3 font-mono">
                       <div class="text-slate-200 font-semibold whitespace-nowrap">{formatFullDateTime(t.time)}</div>
                       <div class="text-[10px] text-slate-500 font-normal">#{t.ticket}</div>

@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@theme {
+  --color-slate-850: #172033;
+}
+
 :root {
   color-scheme: dark;
 }

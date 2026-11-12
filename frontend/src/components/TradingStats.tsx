@@ -144,10 +144,10 @@ export const TradingStats: Component<TradingStatsProps> = (props) => {
               <th class="py-2 px-2 text-right font-semibold">Total {props.mode === 'r' ? 'Return (R)' : 'Profit ($)'}</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-850">
+          <tbody class="divide-y divide-slate-800/60">
             <For each={props.symbols}>
               {(sym) => (
-                <tr class="hover:bg-slate-850/50 transition-colors">
+                <tr class="hover:bg-slate-800/30 transition-colors">
                   <td class="py-2 px-2 font-bold text-white font-mono">{sym.symbol}</td>
                   <td class="py-2 px-2 text-slate-300">{sym.trades}</td>
                   <td class="py-2 px-2">

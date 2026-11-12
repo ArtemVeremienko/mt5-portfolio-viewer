@@ -66,10 +66,10 @@ export const MonthlyHeatmap: Component<MonthlyHeatmapProps> = (props) => {
             <th class="py-2 px-2 text-right font-bold text-slate-300">YTD</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-slate-850">
+        <tbody class="divide-y divide-slate-800/60">
           <For each={props.matrix}>
             {(row) => (
-              <tr class="hover:bg-slate-850/40 transition-colors">
+              <tr class="hover:bg-slate-800/30 transition-colors">
                 <td class="py-2 px-2 text-left font-bold text-white font-mono">{row.year}</td>
                 <For each={[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]}>
                   {(mo) => {
