@@ -14,12 +14,16 @@ import { VanTharpPanel } from './components/VanTharpPanel';
 import { TradingStats } from './components/TradingStats';
 import { TradesTable } from './components/TradesTable';
 import { ExcursionPanel } from './components/ExcursionPanel';
+import { CalendarView } from './components/CalendarView';
+import { AdvancedStats } from './components/AdvancedStats';
 import { 
   LineChart, 
   Award, 
   Layers, 
   PieChart,
-  Activity
+  Activity,
+  Calendar as CalendarIcon,
+  BarChart3
 } from 'lucide-solid';
 
 export const App: Component = () => {
@@ -32,7 +36,7 @@ export const App: Component = () => {
   const [isMt5Connected, setIsMt5Connected] = createSignal<boolean>(false);
   const [isWsConnected, setIsWsConnected] = createSignal<boolean>(false);
   const [isSyncing, setIsSyncing] = createSignal<boolean>(false);
-  const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'excursions' | 'trades' | 'breakdown'>('overview');
+  const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'excursions' | 'calendar' | 'advanced' | 'trades'>('overview');
 
   let ws: WebSocket | null = null;
   let wsReconnectTimer: any = null;
@@ -263,6 +267,30 @@ export const App: Component = () => {
 
             <button
               class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                mainTab() === 'calendar'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30'
+                  : 'text-emerald-400 hover:text-emerald-200 hover:bg-emerald-950/30'
+              }`}
+              onClick={() => setMainTab('calendar')}
+            >
+              <CalendarIcon size={15} />
+              <span>Calendar View</span>
+            </button>
+
+            <button
+              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                mainTab() === 'advanced'
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                  : 'text-blue-400 hover:text-blue-200 hover:bg-blue-950/30'
+              }`}
+              onClick={() => setMainTab('advanced')}
+            >
+              <BarChart3 size={15} />
+              <span>Advanced Statistics</span>
+            </button>
+
+            <button
+              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 mainTab() === 'trades'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -271,18 +299,6 @@ export const App: Component = () => {
             >
               <Layers size={15} />
               <span>Open & History Trades ({portfolioData()?.stats.total_trades || 0})</span>
-            </button>
-
-            <button
-              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                mainTab() === 'breakdown'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-              onClick={() => setMainTab('breakdown')}
-            >
-              <PieChart size={15} />
-              <span>Symbol & Period Analysis</span>
             </button>
           </div>
 
@@ -329,26 +345,32 @@ export const App: Component = () => {
             />
           </Show>
 
-          {/* Tab 3: Trades & History */}
-          <Show when={mainTab() === 'trades'}>
-            <TradesTable
-              openTrades={openTrades()}
-              closedTrades={portfolioData()?.closed_trades || []}
+          {/* Tab: Calendar View */}
+          <Show when={mainTab() === 'calendar'}>
+            <CalendarView
+              days={portfolioData()?.calendar_days || []}
               mode={metricMode()}
             />
           </Show>
 
-          {/* Tab 4: Symbol & Period Breakdown */}
-          <Show when={mainTab() === 'breakdown'}>
-            <TradingStats
+          {/* Tab: Advanced Statistics */}
+          <Show when={mainTab() === 'advanced'}>
+            <AdvancedStats
               stats={portfolioData()?.stats || null}
-              symbols={portfolioData()?.symbol_stats || []}
+              currencySummary={portfolioData()?.currency_summary || []}
               hourly={portfolioData()?.hourly_stats || []}
               days={portfolioData()?.day_of_week_stats || []}
+              riskOfRuin={portfolioData()?.risk_of_ruin || []}
+              durationTrades={portfolioData()?.duration_trades || []}
               mode={metricMode()}
             />
-            <MonthlyHeatmap
-              matrix={portfolioData()?.monthly_matrix || []}
+          </Show>
+
+          {/* Tab: Trades & History */}
+          <Show when={mainTab() === 'trades'}>
+            <TradesTable
+              openTrades={openTrades()}
+              closedTrades={portfolioData()?.closed_trades || []}
               mode={metricMode()}
             />
           </Show>

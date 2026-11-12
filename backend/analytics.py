@@ -72,6 +72,56 @@ def get_sqn_rating(sqn: float) -> Dict[str, str]:
         return {"category": "Superb (Holy Grail)", "badge": "border-purple-500/30 text-purple-400 bg-purple-500/10"}
 
 
+def calculate_trade_pips(deal: Dict[str, Any]) -> float:
+    """Calculates gain/loss in pips or points for a trade deal."""
+    if "pips" in deal and deal["pips"] is not None and abs(float(deal["pips"])) > 1e-4:
+        return round(float(deal["pips"]), 1)
+        
+    symbol = str(deal.get("symbol", "")).upper()
+    open_price = float(deal.get("open_price", 0.0) or 0.0)
+    close_price = float(deal.get("price", 0.0) or 0.0)
+    deal_type = int(deal.get("type", 0) or 0) # 0=BUY, 1=SELL
+    
+    if open_price <= 0 or close_price <= 0:
+        vol = float(deal.get("volume", 0.01) or 0.01)
+        net_profit = float(deal.get("profit", 0.0) or 0.0)
+        return round(net_profit / max(0.1, vol * 10.0), 1)
+
+    if "JPY" in symbol:
+        pip_size = 0.01
+    elif any(c in symbol for c in ["EUR", "USD", "GBP", "CHF", "AUD", "NZD", "CAD"]):
+        pip_size = 0.0001
+    elif "XAU" in symbol or "GOLD" in symbol:
+        pip_size = 0.1
+    elif any(idx in symbol for idx in ["DE40", "GER40", "US30", "US500", "SPX", "NAS100", "USTEC", "UK100", "JP225"]):
+        pip_size = 1.0 # Index points
+    elif "BTC" in symbol or "ETH" in symbol:
+        pip_size = 1.0
+    else:
+        price_str = f"{open_price:.6f}".rstrip("0")
+        decimals = len(price_str.split(".")[1]) if "." in price_str else 2
+        pip_size = 0.01 if decimals in (2, 3) else (0.0001 if decimals >= 4 else 1.0)
+        
+    price_diff = (close_price - open_price) if deal_type == 0 else (open_price - close_price)
+    return round(price_diff / pip_size, 1)
+
+
+def format_duration(seconds: int) -> str:
+    """Formats duration seconds into human-readable string (e.g. '4m', '2h 15m', '3d 4h')."""
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m"
+    hours = minutes // 60
+    rem_min = minutes % 60
+    if hours < 24:
+        return f"{hours}h {rem_min}m" if rem_min > 0 else f"{hours}h"
+    days = hours // 24
+    rem_hours = hours % 24
+    return f"{days}d {rem_hours}h" if rem_hours > 0 else f"{days}d"
+
+
 def process_portfolio_analytics(
     deals: List[Dict[str, Any]],
     current_account: Dict[str, Any],
@@ -131,12 +181,37 @@ def process_portfolio_analytics(
                 "avg_loss_r": 0.0,
                 "best_trade_r": 0.0,
                 "worst_trade_r": 0.0,
+                # Advanced Statistics
+                "profitability_won_pct": 0.0,
+                "profitability_lost_pct": 0.0,
+                "total_pips": 0.0,
+                "avg_win_pips": 0.0,
+                "avg_loss_pips": 0.0,
+                "total_lots": 0.0,
+                "best_trade_date": "",
+                "worst_trade_date": "",
+                "best_trade_pips": 0.0,
+                "best_trade_pips_date": "",
+                "worst_trade_pips": 0.0,
+                "worst_trade_pips_date": "",
+                "avg_trade_length_seconds": 0,
+                "avg_trade_length_str": "0s",
+                "profit_std_dev": 0.0,
+                "z_score": 0.0,
+                "z_score_p_value": 0.0,
+                "expectancy_pips": 0.0,
+                "ahpr_pct": 0.0,
+                "ghpr_pct": 0.0,
             },
             "curves": [],
             "monthly_matrix": [],
             "symbol_stats": [],
             "hourly_stats": [],
             "day_of_week_stats": [],
+            "calendar_days": [],
+            "currency_summary": [],
+            "duration_trades": [],
+            "risk_of_ruin": [],
             "r_distribution": [],
             "excursion_stats": {
                 "optimal_sl_pips": 0.0,
@@ -227,6 +302,18 @@ def process_portfolio_analytics(
                 deal_record["mfe_pips"] = mfe_pips
                 deal_record["mae_r"] = mae_r
                 deal_record["mfe_r"] = mfe_r
+                
+                # Extended Pip & Duration metrics
+                pips_val = calculate_trade_pips(d)
+                open_t = int(d.get("open_time", 0) or d.get("time", 0) or 0)
+                close_t = int(d.get("time", 0) or 0)
+                dur_sec = max(0, close_t - open_t) if close_t >= open_t else 0
+                deal_record["pips"] = pips_val
+                deal_record["open_time"] = open_t
+                deal_record["duration_seconds"] = dur_sec
+                deal_record["duration_str"] = format_duration(dur_sec)
+                deal_record["type_str"] = "BUY" if int(d.get("type", 0) or 0) == 0 else "SELL"
+                
                 trade_deals.append(deal_record)
 
                 running_balance += net_trade_profit
@@ -448,10 +535,120 @@ def process_portfolio_analytics(
         })
     symbol_stats.sort(key=lambda x: x["trades"], reverse=True)
 
-    # Hourly and Day-of-week breakdown
-    hourly_dict = {h: {"hour": h, "trades": 0, "profit": 0.0, "r": 0.0} for h in range(24)}
-    dow_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    dow_dict = {i: {"day": dow_names[i], "trades": 0, "profit": 0.0, "r": 0.0} for i in range(7)}
+    # Format date helper for best/worst trades
+    def fmt_trade_date(ts: Optional[int]) -> str:
+        if not ts:
+            return ""
+        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%b %d")
+
+    # Advanced Statistics Metrics
+    total_pips = round(float(sum(t.get("pips", 0.0) for t in trade_deals)), 1)
+    winning_pips = [t.get("pips", 0.0) for t in winning_trades]
+    losing_pips = [t.get("pips", 0.0) for t in losing_trades]
+    avg_win_pips = round(float(np.mean(winning_pips)), 1) if winning_pips else 0.0
+    avg_loss_pips = round(float(np.mean(losing_pips)), 1) if losing_pips else 0.0
+
+    total_lots = round(float(sum(t.get("volume", 0.0) for t in trade_deals)), 2)
+
+    best_trade_deal = max(trade_deals, key=lambda x: x["net_profit"], default=None)
+    worst_trade_deal = min(trade_deals, key=lambda x: x["net_profit"], default=None)
+    best_trade_pips_deal = max(trade_deals, key=lambda x: x.get("pips", 0.0), default=None)
+    worst_trade_pips_deal = min(trade_deals, key=lambda x: x.get("pips", 0.0), default=None)
+
+    best_trade_date = fmt_trade_date(best_trade_deal.get("time")) if best_trade_deal else ""
+    worst_trade_date = fmt_trade_date(worst_trade_deal.get("time")) if worst_trade_deal else ""
+    best_trade_pips_val = round(float(best_trade_pips_deal.get("pips", 0.0)), 1) if best_trade_pips_deal else 0.0
+    best_trade_pips_date = fmt_trade_date(best_trade_pips_deal.get("time")) if best_trade_pips_deal else ""
+    worst_trade_pips_val = round(float(worst_trade_pips_deal.get("pips", 0.0)), 1) if worst_trade_pips_deal else 0.0
+    worst_trade_pips_date = fmt_trade_date(worst_trade_pips_deal.get("time")) if worst_trade_pips_deal else ""
+
+    all_durations = [t.get("duration_seconds", 0) for t in trade_deals]
+    avg_trade_length_seconds = int(np.mean(all_durations)) if all_durations else 0
+    avg_trade_length_str = format_duration(avg_trade_length_seconds)
+
+    all_profits = [t["net_profit"] for t in trade_deals]
+    profit_std_dev = round(float(np.std(all_profits, ddof=1)), 3) if len(all_profits) > 1 else 0.0
+
+    # Z-Score streak randomness test
+    if total_trades > 2 and won_count > 0 and lost_count > 0:
+        runs = 1
+        for i in range(1, total_trades):
+            prev_win = trade_deals[i-1]["net_profit"] > 0
+            curr_win = trade_deals[i]["net_profit"] > 0
+            if prev_win != curr_win:
+                runs += 1
+        n_w = float(won_count)
+        n_l = float(lost_count)
+        n_tot = float(total_trades)
+        numerator = n_tot * (runs - 0.5) - (2.0 * n_w * n_l)
+        denom_sq = (2.0 * n_w * n_l * (2.0 * n_w * n_l - n_tot)) / (n_tot - 1.0)
+        if denom_sq > 0:
+            z_score = round(float(numerator / math.sqrt(denom_sq)), 2)
+            z_score_p_val = round(float(math.erf(abs(z_score) / math.sqrt(2.0)) * 100.0), 2)
+        else:
+            z_score = 0.0
+            z_score_p_val = 0.0
+    else:
+        z_score = 0.0
+        z_score_p_val = 0.0
+
+    # Expectancy Pips
+    loss_rate_dec = (lost_count / total_trades) if total_trades > 0 else 0.0
+    win_rate_dec = (won_count / total_trades) if total_trades > 0 else 0.0
+    expectancy_pips = round((win_rate_dec * avg_win_pips) - (loss_rate_dec * abs(avg_loss_pips)), 1)
+
+    # AHPR & GHPR
+    holding_returns = []
+    c_bal = initial_deposit if initial_deposit > 0 else (current_account.get("balance", 100.0) or 100.0)
+    for t in trade_deals:
+        hpr_ret = t["net_profit"] / max(1.0, c_bal)
+        holding_returns.append(hpr_ret)
+        c_bal += t["net_profit"]
+
+    if holding_returns:
+        ahpr_pct = round(float(np.mean(holding_returns) * 100.0), 2)
+        clamped_factors = [max(1e-4, 1.0 + r) for r in holding_returns]
+        ghpr_mult = float(np.prod(clamped_factors) ** (1.0 / len(holding_returns)))
+        ghpr_pct = round((ghpr_mult - 1.0) * 100.0, 2)
+    else:
+        ahpr_pct = 0.0
+        ghpr_pct = 0.0
+
+    # Risk of Ruin
+    latest_bal = current_account.get("balance", current_run_bal)
+    latest_eq = current_account.get("equity", latest_bal)
+    current_bal_val = max(1.0, latest_bal)
+    avg_loss_val = abs(avg_loss) if avg_loss > 0 else 0.10
+
+    if avg_loss_val > 0 and won_count > 0:
+        payoff = avg_win / avg_loss_val if avg_loss_val > 0 else 1.0
+        edge = win_rate_dec - (loss_rate_dec / payoff if payoff > 0 else 1.0)
+    else:
+        edge = 0.0
+
+    risk_of_ruin = []
+    for loss_pct in [100, 90, 80, 70, 60, 50, 40, 30, 20, 10]:
+        consecutive_losses = max(1, round((loss_pct / 100.0) * (current_bal_val / avg_loss_val)))
+        if edge > 0:
+            a_factor = (1.0 - edge) / (1.0 + edge)
+            prob_val = a_factor ** consecutive_losses
+            if prob_val < 0.0001:
+                prob_str = "<0.01%"
+            else:
+                prob_str = f"{round(prob_val * 100.0, 2)}%"
+        else:
+            prob_str = "100%"
+        
+        risk_of_ruin.append({
+            "loss_size_pct": loss_pct,
+            "probability": prob_str,
+            "consecutive_losses": consecutive_losses
+        })
+
+    # Hourly and Day-of-week breakdown (with winners/losers)
+    hourly_dict = {h: {"hour": h, "trades": 0, "profit": 0.0, "r": 0.0, "won": 0, "lost": 0} for h in range(24)}
+    dow_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    dow_dict = {i: {"day": dow_names[i], "trades": 0, "profit": 0.0, "r": 0.0, "won": 0, "lost": 0} for i in range(7)}
 
     for td in trade_deals:
         dt = datetime.fromtimestamp(td.get("time", 0), tz=timezone.utc)
@@ -460,18 +657,170 @@ def process_portfolio_analytics(
         hourly_dict[h]["trades"] += 1
         hourly_dict[h]["profit"] += td["net_profit"]
         hourly_dict[h]["r"] += td["r_multiple"]
+        if td["net_profit"] > 0:
+            hourly_dict[h]["won"] += 1
+        else:
+            hourly_dict[h]["lost"] += 1
 
         dow_dict[d]["trades"] += 1
         dow_dict[d]["profit"] += td["net_profit"]
         dow_dict[d]["r"] += td["r_multiple"]
+        if td["net_profit"] > 0:
+            dow_dict[d]["won"] += 1
+        else:
+            dow_dict[d]["lost"] += 1
 
     hourly_stats = [
-        {"hour": h, "trades": v["trades"], "profit": round(v["profit"], 2), "r": round(v["r"], 2)}
+        {
+            "hour": h,
+            "trades": v["trades"],
+            "won": v["won"],
+            "lost": v["lost"],
+            "profit": round(v["profit"], 2),
+            "r": round(v["r"], 2)
+        }
         for h, v in hourly_dict.items()
     ]
     day_of_week_stats = [
-        {"day": v["day"], "trades": v["trades"], "profit": round(v["profit"], 2), "r": round(v["r"], 2)}
+        {
+            "day": v["day"],
+            "trades": v["trades"],
+            "won": v["won"],
+            "lost": v["lost"],
+            "profit": round(v["profit"], 2),
+            "r": round(v["r"], 2)
+        }
         for i, v in dow_dict.items()
+    ]
+
+    # Calendar View aggregation (by date YYYY-MM-DD)
+    calendar_days_dict = {}
+    for td in trade_deals:
+        dt = datetime.fromtimestamp(td.get("time", 0), tz=timezone.utc)
+        d_key = dt.strftime("%Y-%m-%d")
+        if d_key not in calendar_days_dict:
+            calendar_days_dict[d_key] = {
+                "date": d_key,
+                "profit": 0.0,
+                "r": 0.0,
+                "trades": 0,
+                "won": 0,
+                "lost": 0,
+                "deals": []
+            }
+        calendar_days_dict[d_key]["trades"] += 1
+        calendar_days_dict[d_key]["profit"] += td["net_profit"]
+        calendar_days_dict[d_key]["r"] += td["r_multiple"]
+        if td["net_profit"] > 0:
+            calendar_days_dict[d_key]["won"] += 1
+        else:
+            calendar_days_dict[d_key]["lost"] += 1
+
+        calendar_days_dict[d_key]["deals"].append({
+            "ticket": td.get("ticket"),
+            "symbol": td.get("symbol"),
+            "type": td.get("type", 0),
+            "type_str": td.get("type_str", "BUY"),
+            "volume": td.get("volume", 0.0),
+            "open_price": td.get("open_price", 0.0),
+            "close_price": td.get("price", 0.0),
+            "open_time": td.get("open_time", 0),
+            "close_time": td.get("time", 0),
+            "duration_seconds": td.get("duration_seconds", 0),
+            "duration_str": td.get("duration_str", ""),
+            "profit": round(td["net_profit"], 2),
+            "pips": td.get("pips", 0.0),
+            "commission": td.get("commission", 0.0),
+            "r_multiple": td.get("r_multiple", 0.0)
+        })
+
+    calendar_days = []
+    for d_key, d_val in sorted(calendar_days_dict.items()):
+        d_val["profit"] = round(d_val["profit"], 2)
+        d_val["r"] = round(d_val["r"], 2)
+        d_val["win_rate"] = round(d_val["won"] / d_val["trades"] * 100.0, 1) if d_val["trades"] > 0 else 0.0
+        calendar_days.append(d_val)
+
+    # Currency / Symbol Summary Table (Longs vs Shorts vs Total)
+    summary_dict = {}
+    for td in trade_deals:
+        sym = td.get("symbol", "OTHER") or "OTHER"
+        if sym not in summary_dict:
+            summary_dict[sym] = {
+                "symbol": sym,
+                "long_trades": 0,
+                "long_pips": 0.0,
+                "long_profit": 0.0,
+                "short_trades": 0,
+                "short_pips": 0.0,
+                "short_profit": 0.0,
+                "total_trades": 0,
+                "total_pips": 0.0,
+                "total_profit": 0.0,
+                "won_count": 0,
+                "lost_count": 0,
+            }
+        t_type = td.get("type", 0) # 0=BUY (Long), 1=SELL (Short)
+        pips_num = td.get("pips", 0.0)
+        prof_num = td["net_profit"]
+        
+        summary_dict[sym]["total_trades"] += 1
+        summary_dict[sym]["total_pips"] += pips_num
+        summary_dict[sym]["total_profit"] += prof_num
+        if prof_num > 0:
+            summary_dict[sym]["won_count"] += 1
+        else:
+            summary_dict[sym]["lost_count"] += 1
+            
+        if t_type == 0:
+            summary_dict[sym]["long_trades"] += 1
+            summary_dict[sym]["long_pips"] += pips_num
+            summary_dict[sym]["long_profit"] += prof_num
+        else:
+            summary_dict[sym]["short_trades"] += 1
+            summary_dict[sym]["short_pips"] += pips_num
+            summary_dict[sym]["short_profit"] += prof_num
+
+    currency_summary = []
+    for sym, v in summary_dict.items():
+        tot = v["total_trades"]
+        won = v["won_count"]
+        lost = v["lost_count"]
+        currency_summary.append({
+            "symbol": sym,
+            "long_trades": v["long_trades"],
+            "long_pips": round(v["long_pips"], 1),
+            "long_profit": round(v["long_profit"], 2),
+            "short_trades": v["short_trades"],
+            "short_pips": round(v["short_pips"], 1),
+            "short_profit": round(v["short_profit"], 2),
+            "total_trades": tot,
+            "total_pips": round(v["total_pips"], 1),
+            "total_profit": round(v["total_profit"], 2),
+            "won_count": won,
+            "lost_count": lost,
+            "won_pct": round(won / tot * 100.0, 1) if tot > 0 else 0.0,
+            "lost_pct": round(lost / tot * 100.0, 1) if tot > 0 else 0.0,
+        })
+    currency_summary.sort(key=lambda x: x["total_trades"], reverse=True)
+
+    # Duration Scatter Coordinates (last 200 trades)
+    duration_trades = [
+        {
+            "ticket": td.get("ticket"),
+            "symbol": td.get("symbol"),
+            "type": td.get("type", 0),
+            "type_str": td.get("type_str", "BUY"),
+            "open_time": td.get("open_time", 0),
+            "close_time": td.get("time", 0),
+            "duration_seconds": td.get("duration_seconds", 0),
+            "duration_str": td.get("duration_str", ""),
+            "profit": round(td["net_profit"], 2),
+            "pips": td.get("pips", 0.0),
+            "r_multiple": td.get("r_multiple", 0.0),
+            "is_winner": td["net_profit"] > 0
+        }
+        for td in trade_deals[-200:]
     ]
 
     # Van Tharp R Distribution Buckets
@@ -595,6 +944,27 @@ def process_portfolio_analytics(
             "avg_loss_r": round(avg_loss_r, 2),
             "best_trade_r": round(best_trade_r, 2),
             "worst_trade_r": round(worst_trade_r, 2),
+            # Advanced Statistics Metrics
+            "profitability_won_pct": round(win_rate, 1),
+            "profitability_lost_pct": round(100.0 - win_rate, 1) if total_trades > 0 else 0.0,
+            "total_pips": total_pips,
+            "avg_win_pips": avg_win_pips,
+            "avg_loss_pips": avg_loss_pips,
+            "total_lots": total_lots,
+            "best_trade_date": best_trade_date,
+            "worst_trade_date": worst_trade_date,
+            "best_trade_pips": best_trade_pips_val,
+            "best_trade_pips_date": best_trade_pips_date,
+            "worst_trade_pips": worst_trade_pips_val,
+            "worst_trade_pips_date": worst_trade_pips_date,
+            "avg_trade_length_seconds": avg_trade_length_seconds,
+            "avg_trade_length_str": avg_trade_length_str,
+            "profit_std_dev": profit_std_dev,
+            "z_score": z_score,
+            "z_score_p_value": z_score_p_val,
+            "expectancy_pips": expectancy_pips,
+            "ahpr_pct": ahpr_pct,
+            "ghpr_pct": ghpr_pct,
             # Sample Size & Scope
             "is_sample_developing": total_trades < 30,
             "sample_trades": total_trades,
@@ -608,6 +978,10 @@ def process_portfolio_analytics(
         "symbol_stats": symbol_stats,
         "hourly_stats": hourly_stats,
         "day_of_week_stats": day_of_week_stats,
+        "calendar_days": calendar_days,
+        "currency_summary": currency_summary,
+        "duration_trades": duration_trades,
+        "risk_of_ruin": risk_of_ruin,
         "r_distribution": r_distribution,
         "excursion_stats": excursion_stats,
         "closed_trades": trade_deals[::-1] # Reverse to display newest first

@@ -65,6 +65,27 @@ export interface PortfolioStats {
   avg_loss_r: number;
   best_trade_r: number;
   worst_trade_r: number;
+  // Advanced Statistics
+  profitability_won_pct?: number;
+  profitability_lost_pct?: number;
+  total_pips?: number;
+  avg_win_pips?: number;
+  avg_loss_pips?: number;
+  total_lots?: number;
+  best_trade_date?: string;
+  worst_trade_date?: string;
+  best_trade_pips?: number;
+  best_trade_pips_date?: string;
+  worst_trade_pips?: number;
+  worst_trade_pips_date?: string;
+  avg_trade_length_seconds?: number;
+  avg_trade_length_str?: string;
+  profit_std_dev?: number;
+  z_score?: number;
+  z_score_p_value?: number;
+  expectancy_pips?: number;
+  ahpr_pct?: number;
+  ghpr_pct?: number;
   // Sample Size & Scope
   is_sample_developing?: boolean;
   sample_trades?: number;
@@ -114,6 +135,8 @@ export interface SymbolStat {
 export interface HourlyStat {
   hour: number;
   trades: number;
+  won: number;
+  lost: number;
   profit: number;
   r: number;
 }
@@ -121,8 +144,77 @@ export interface HourlyStat {
 export interface DayOfWeekStat {
   day: string;
   trades: number;
+  won: number;
+  lost: number;
   profit: number;
   r: number;
+}
+
+export interface CalendarDeal {
+  ticket: number;
+  symbol: string;
+  type: number;
+  type_str: string;
+  volume: number;
+  open_price: number;
+  close_price: number;
+  open_time: number;
+  close_time: number;
+  duration_seconds: number;
+  duration_str: string;
+  profit: number;
+  pips: number;
+  commission: number;
+  r_multiple: number;
+}
+
+export interface CalendarDay {
+  date: string; // YYYY-MM-DD
+  profit: number;
+  r: number;
+  trades: number;
+  won: number;
+  lost: number;
+  win_rate: number;
+  deals: CalendarDeal[];
+}
+
+export interface CurrencySummaryItem {
+  symbol: string;
+  long_trades: number;
+  long_pips: number;
+  long_profit: number;
+  short_trades: number;
+  short_pips: number;
+  short_profit: number;
+  total_trades: number;
+  total_pips: number;
+  total_profit: number;
+  won_count: number;
+  lost_count: number;
+  won_pct: number;
+  lost_pct: number;
+}
+
+export interface DurationTrade {
+  ticket: number;
+  symbol: string;
+  type: number;
+  type_str: string;
+  open_time: number;
+  close_time: number;
+  duration_seconds: number;
+  duration_str: string;
+  profit: number;
+  pips: number;
+  r_multiple: number;
+  is_winner: boolean;
+}
+
+export interface RiskOfRuinItem {
+  loss_size_pct: number;
+  probability: string;
+  consecutive_losses: number;
 }
 
 export interface RDistributionBucket {
@@ -212,6 +304,10 @@ export interface PortfolioData {
   symbol_stats: SymbolStat[];
   hourly_stats: HourlyStat[];
   day_of_week_stats: DayOfWeekStat[];
+  calendar_days?: CalendarDay[];
+  currency_summary?: CurrencySummaryItem[];
+  duration_trades?: DurationTrade[];
+  risk_of_ruin?: RiskOfRuinItem[];
   r_distribution: RDistributionBucket[];
   excursion_stats: ExcursionStats;
   closed_trades: TradeDeal[];

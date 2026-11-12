@@ -1,5 +1,11 @@
 import pytest
-from backend.analytics import compute_1r_risk, process_portfolio_analytics, get_sqn_rating
+from backend.analytics import (
+    compute_1r_risk,
+    process_portfolio_analytics,
+    get_sqn_rating,
+    calculate_trade_pips,
+    format_duration
+)
 from backend.database import init_db, upsert_account, upsert_deals, get_deals_by_account
 
 def test_compute_1r_risk_with_sl():
@@ -145,3 +151,46 @@ def test_database_persistence():
     saved = get_deals_by_account(777777)
     assert len(saved) >= 1
     assert saved[0]["ticket"] == 55501
+
+
+def test_advanced_statistics_and_calendar():
+    assert format_duration(45) == "45s"
+    assert format_duration(240) == "4m"
+    assert format_duration(3600 * 2 + 15 * 60) == "2h 15m"
+
+    # Test EURUSD pips
+    buy_deal = {"symbol": "EURUSD", "open_price": 1.0800, "price": 1.0850, "type": 0}
+    assert calculate_trade_pips(buy_deal) == 50.0
+
+    sell_deal = {"symbol": "EURUSD", "open_price": 1.0850, "price": 1.0800, "type": 1}
+    assert calculate_trade_pips(sell_deal) == 50.0
+
+    deals = [
+        {"ticket": 1, "order_id": 1, "time": 1700000000, "time_msc": 1700000000000, "type": 2, "entry": 0, "profit": 5000.0, "swap": 0, "commission": 0, "symbol": ""},
+        {"ticket": 2, "order_id": 2, "time": 1700003600, "time_msc": 1700003600000, "type": 0, "entry": 1, "open_price": 1.0800, "price": 1.0850, "profit": 50.0, "swap": 0, "commission": -1.0, "symbol": "EURUSD", "volume": 0.1, "open_time": 1700000000},
+        {"ticket": 3, "order_id": 3, "time": 1700007200, "time_msc": 1700007200000, "type": 1, "entry": 1, "open_price": 1.0850, "price": 1.0870, "profit": -20.0, "swap": 0, "commission": -1.0, "symbol": "EURUSD", "volume": 0.1, "open_time": 1700003600},
+        {"ticket": 4, "order_id": 4, "time": 1700090000, "time_msc": 1700090000000, "type": 0, "entry": 1, "open_price": 150.00, "price": 150.80, "profit": 80.0, "swap": 0, "commission": -2.0, "symbol": "USDJPY", "volume": 0.2, "open_time": 1700085000},
+    ]
+    acc = {"login": 8888, "balance": 5106.0, "equity": 5106.0, "broker": "Test"}
+    res = process_portfolio_analytics(deals, acc)
+
+    stats = res["stats"]
+    assert "total_pips" in stats
+    assert stats["total_lots"] == 0.4
+    assert stats["profitability_won_pct"] > 60.0
+    assert "z_score" in stats
+    assert "ahpr_pct" in stats
+    assert "ghpr_pct" in stats
+
+    assert "calendar_days" in res
+    assert len(res["calendar_days"]) >= 1
+    assert "deals" in res["calendar_days"][0]
+
+    assert "currency_summary" in res
+    assert len(res["currency_summary"]) == 2 # EURUSD and USDJPY
+
+    assert "risk_of_ruin" in res
+    assert len(res["risk_of_ruin"]) == 10 # 10% to 100%
+
+    assert "duration_trades" in res
+    assert len(res["duration_trades"]) == 3
