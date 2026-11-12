@@ -59,6 +59,22 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   let activeHighlightSeries: ISeriesApi<any> | null = null;
   let barDataMap = new Map<number, BarItemMeta>();
   let lastHoveredTime: number | null = null;
+  let isHandlingCrosshair = false;
+
+  // Zoom and update tracking to preserve user zoom level across live ticks and pill toggles
+  let lastTab: ChartTab | null = null;
+  let lastTimeframe: string | null = null;
+  let lastCurves: CurvePoint[] = [];
+  let lastPillsState = {
+    growth: true,
+    equityGrowth: true,
+    balance: true,
+    equity: true,
+    profit: true,
+    drawdown: true,
+    rCurve: true,
+    changeBars: true,
+  };
 
   const [activeTab, setActiveTab] = createSignal<ChartTab>('growth');
   const [activeTimeframe, setActiveTimeframe] = createSignal<string>('ALL');
@@ -142,77 +158,84 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
 
     // Crosshair hover: illuminate hovered change bar using an error-free overlay series & show anchored tooltip
     chart.subscribeCrosshairMove((param) => {
-      if (!activeHighlightSeries || !barDataMap.size) {
-        setBarTooltip(null);
-        return;
-      }
-      const time = param.time as number | undefined;
-      if (time !== undefined && barDataMap.has(time)) {
-        const curr = barDataMap.get(time)!;
-        if (time !== lastHoveredTime) {
-          try {
-            activeHighlightSeries.setData([{ time: curr.time, value: curr.value, color: curr.hoverColor }]);
-          } catch (e) {
-            // Safe guard against canvas edge cases
-          }
-          lastHoveredTime = time;
+      if (isHandlingCrosshair) return;
+      isHandlingCrosshair = true;
+
+      try {
+        if (!activeHighlightSeries || !barDataMap.size) {
+          setBarTooltip(null);
+          return;
         }
-
-        // Calculate anchored tooltip coordinates
-        try {
-          const pt = param.point;
-          if (pt) {
-            let x = pt.x;
+        const time = param.time as number | undefined;
+        if (time !== undefined && barDataMap.has(time)) {
+          const curr = barDataMap.get(time)!;
+          if (time !== lastHoveredTime) {
             try {
-              const timeX = chart?.timeScale().timeToCoordinate(time as any);
-              if (timeX !== null && timeX !== undefined && !isNaN(timeX)) {
-                x = timeX;
-              }
-            } catch (err) {
-              // Ignore coordinate calculation errors
+              activeHighlightSeries.setData([{ time: curr.time, value: curr.value, color: curr.hoverColor }]);
+            } catch (e) {
+              // Safe guard against canvas edge cases
             }
+            lastHoveredTime = time;
+          }
 
-            const y = pt.y;
-            const cWidth = chartContainer?.clientWidth || 800;
-            const isPos = curr.isPositive;
-            
-            // Clamp X so tooltip never clips left/right boundaries (card width ~140px)
-            const clampedX = Math.max(75, Math.min(cWidth - 75, x));
-            
-            // Flip logic: if cursor Y is near top (< 120px), place tooltip below cursor
-            const flipped = y < 120;
-            
-            setBarTooltip({
-              x: clampedX,
-              y,
-              isPositive: isPos,
-              flipped,
-              title: curr.title,
-              dateStr: curr.dateStr,
-              primaryValue: curr.primaryValue,
-              secondaryValue: curr.secondaryValue,
-              valueColor: isPos ? 'text-emerald-400' : 'text-rose-400',
-            });
-          } else {
+          // Calculate anchored tooltip coordinates
+          try {
+            const pt = param.point;
+            if (pt) {
+              let x = pt.x;
+              try {
+                const timeX = chart?.timeScale().timeToCoordinate(time as any);
+                if (timeX !== null && timeX !== undefined && !isNaN(timeX)) {
+                  x = timeX;
+                }
+              } catch (err) {
+                // Ignore coordinate calculation errors
+              }
+
+              const y = pt.y;
+              const cWidth = chartContainer?.clientWidth || 800;
+              const isPos = curr.isPositive;
+              
+              // Clamp X so tooltip never clips left/right boundaries (card width ~140px)
+              const clampedX = Math.max(75, Math.min(cWidth - 75, x));
+              
+              // Flip logic: if cursor Y is near top (< 120px), place tooltip below cursor
+              const flipped = y < 120;
+              
+              setBarTooltip({
+                x: clampedX,
+                y,
+                isPositive: isPos,
+                flipped,
+                title: curr.title,
+                dateStr: curr.dateStr,
+                primaryValue: curr.primaryValue,
+                secondaryValue: curr.secondaryValue,
+                valueColor: isPos ? 'text-emerald-400' : 'text-rose-400',
+              });
+            } else {
+              setBarTooltip(null);
+            }
+          } catch (e) {
             setBarTooltip(null);
           }
-        } catch (e) {
+        } else {
+          if (lastHoveredTime !== null) {
+            try {
+              activeHighlightSeries.setData([]);
+            } catch (e) {
+              // Safe guard against canvas edge cases
+            }
+            lastHoveredTime = null;
+          }
           setBarTooltip(null);
         }
-      } else {
-        if (lastHoveredTime !== null) {
-          try {
-            activeHighlightSeries.setData([]);
-          } catch (e) {
-            // Safe guard against canvas edge cases
-          }
-          lastHoveredTime = null;
-        }
-        setBarTooltip(null);
+      } finally {
+        isHandlingCrosshair = false;
       }
     });
 
-    updateChartData();
+    updateChartData(true);
   };
 
   const clearSeries = () => {
@@ -229,11 +252,21 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     activeHighlightSeries = null;
     barDataMap.clear();
     lastHoveredTime = null;
+    isHandlingCrosshair = false;
     setBarTooltip(null);
   };
 
-  const updateChartData = () => {
+  const updateChartData = (shouldFitContent: boolean = false) => {
     if (!chart || !props.curves || props.curves.length === 0) return;
+
+    let prevLogicalRange: any = null;
+    if (!shouldFitContent) {
+      try {
+        prevLogicalRange = chart.timeScale().getVisibleLogicalRange();
+      } catch (e) {
+        // Ignored
+      }
+    }
 
     clearSeries();
 
@@ -563,7 +596,15 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       }
     }
 
-    chart.timeScale().fitContent();
+    if (!shouldFitContent && prevLogicalRange) {
+      try {
+        chart.timeScale().setVisibleLogicalRange(prevLogicalRange);
+      } catch (e) {
+        chart.timeScale().fitContent();
+      }
+    } else {
+      chart.timeScale().fitContent();
+    }
   };
 
   onMount(() => {
@@ -581,18 +622,68 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   });
 
   createEffect(() => {
-    activeTab();
-    activeTimeframe();
-    showGrowth();
-    showEquityGrowth();
-    showBalance();
-    showEquity();
-    showProfit();
-    showDrawdown();
-    showRCurve();
-    showChangeBars();
-    props.curves;
-    updateChartData();
+    const tab = activeTab();
+    const tf = activeTimeframe();
+    const g = showGrowth();
+    const eg = showEquityGrowth();
+    const b = showBalance();
+    const eq = showEquity();
+    const pr = showProfit();
+    const dd = showDrawdown();
+    const rc = showRCurve();
+    const cb = showChangeBars();
+    const curves = props.curves || [];
+
+    const tabChanged = tab !== lastTab;
+    const tfChanged = tf !== lastTimeframe;
+    const pillsChanged = 
+      g !== lastPillsState.growth ||
+      eg !== lastPillsState.equityGrowth ||
+      b !== lastPillsState.balance ||
+      eq !== lastPillsState.equity ||
+      pr !== lastPillsState.profit ||
+      dd !== lastPillsState.drawdown ||
+      rc !== lastPillsState.rCurve ||
+      cb !== lastPillsState.changeBars;
+
+    const curvesChanged = 
+      curves.length !== lastCurves.length ||
+      (curves.length > 0 && (
+        curves[0].timestamp !== lastCurves[0]?.timestamp ||
+        curves[curves.length - 1].timestamp !== lastCurves[lastCurves.length - 1]?.timestamp ||
+        curves[curves.length - 1].balance !== lastCurves[lastCurves.length - 1]?.balance ||
+        curves[curves.length - 1].equity !== lastCurves[lastCurves.length - 1]?.equity
+      ));
+
+    // If series already exist and nothing relevant changed (e.g. background 1s tick that didn't modify curves), skip update
+    if (!tabChanged && !tfChanged && !pillsChanged && !curvesChanged && seriesList.length > 0) {
+      return;
+    }
+
+    // Auto-fit ONLY on: tab change, timeframe change, or first time data loads (or account switch)
+    const isAccountSwitchOrFirstLoad = 
+      curves.length > 0 && (
+        lastCurves.length === 0 || 
+        curves[0]?.timestamp !== lastCurves[0]?.timestamp
+      );
+    const shouldFitContent = tabChanged || tfChanged || isAccountSwitchOrFirstLoad;
+
+    // Update state trackers
+    lastTab = tab;
+    lastTimeframe = tf;
+    lastCurves = [...curves];
+    lastPillsState = {
+      growth: g,
+      equityGrowth: eg,
+      balance: b,
+      equity: eq,
+      profit: pr,
+      drawdown: dd,
+      rCurve: rc,
+      changeBars: cb,
+    };
+
+    updateChartData(shouldFitContent);
   });
 
   return (
@@ -834,46 +925,41 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         <div ref={chartContainer} class="w-full h-full rounded-xl overflow-hidden" />
         
         <Show when={barTooltip()}>
-          {(tip) => {
-            const flipped = tip().flipped;
-            return (
-              <div
-                class="pointer-events-none absolute z-50 transition-all duration-75 select-none"
-                style={{
-                  left: `${tip().x}px`,
-                  top: `${tip().y}px`,
-                  transform: flipped
-                    ? 'translate(-50%, 14px)'
-                    : 'translate(-50%, calc(-100% - 14px))',
-                }}
-              >
-                <div class="relative bg-slate-900/95 border border-slate-700/90 shadow-2xl backdrop-blur-md rounded-xl px-3.5 py-2.5 text-center min-w-[130px] flex flex-col gap-0.5">
-                  {/* Caret pointing to cursor */}
-                  <Show when={!flipped}>
-                    <div class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 border-r border-b border-slate-700/90 rotate-45" />
-                  </Show>
-                  <Show when={flipped}>
-                    <div class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 border-l border-t border-slate-700/90 rotate-45" />
-                  </Show>
+          <div
+            class="pointer-events-none absolute z-50 transition-all duration-75 select-none"
+            style={{
+              left: `${barTooltip()?.x ?? 0}px`,
+              top: `${barTooltip()?.y ?? 0}px`,
+              transform: barTooltip()?.flipped
+                ? 'translate(-50%, 14px)'
+                : 'translate(-50%, calc(-100% - 14px))',
+            }}
+          >
+            <div class="relative bg-slate-900/95 border border-slate-700/90 shadow-2xl backdrop-blur-md rounded-xl px-3.5 py-2.5 text-center min-w-[130px] flex flex-col gap-0.5">
+              {/* Caret pointing to cursor */}
+              <Show when={!barTooltip()?.flipped}>
+                <div class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 border-r border-b border-slate-700/90 rotate-45" />
+              </Show>
+              <Show when={barTooltip()?.flipped}>
+                <div class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 border-l border-t border-slate-700/90 rotate-45" />
+              </Show>
 
-                  <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    {tip().title}
-                  </div>
-                  <div class="text-[11px] font-medium text-slate-300 font-mono">
-                    {tip().dateStr}
-                  </div>
-                  <div class={`text-sm font-bold font-mono tracking-tight ${tip().valueColor}`}>
-                    {tip().primaryValue}
-                  </div>
-                  <Show when={tip().secondaryValue}>
-                    <div class="text-[11px] font-semibold font-mono text-slate-400">
-                      {tip().secondaryValue}
-                    </div>
-                  </Show>
-                </div>
+              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                {barTooltip()?.title}
               </div>
-            );
-          }}
+              <div class="text-[11px] font-medium text-slate-300 font-mono">
+                {barTooltip()?.dateStr}
+              </div>
+              <div class={`text-sm font-bold font-mono tracking-tight ${barTooltip()?.valueColor}`}>
+                {barTooltip()?.primaryValue}
+              </div>
+              <Show when={barTooltip()?.secondaryValue}>
+                <div class="text-[11px] font-semibold font-mono text-slate-400">
+                  {barTooltip()?.secondaryValue}
+                </div>
+              </Show>
+            </div>
+          </div>
         </Show>
       </div>
     </div>
