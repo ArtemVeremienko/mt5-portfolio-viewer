@@ -160,20 +160,28 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
 
         // Calculate anchored tooltip coordinates
         try {
-          let x = chart?.timeScale().timeToCoordinate(time as any);
-          if (x === null || x === undefined) x = param.point?.x;
+          const pt = param.point;
+          if (pt) {
+            let x = pt.x;
+            try {
+              const timeX = chart?.timeScale().timeToCoordinate(time as any);
+              if (timeX !== null && timeX !== undefined && !isNaN(timeX)) {
+                x = timeX;
+              }
+            } catch (err) {
+              // Ignore coordinate calculation errors
+            }
 
-          let y = activeBarSeries?.priceToCoordinate(curr.value);
-          if (y === null || y === undefined) y = param.point?.y;
-
-          if (x !== null && x !== undefined && y !== null && y !== undefined) {
+            const y = pt.y;
             const cWidth = chartContainer?.clientWidth || 800;
-            const cHeight = chartContainer?.clientHeight || 375;
             const isPos = curr.isPositive;
+            
             // Clamp X so tooltip never clips left/right boundaries (card width ~140px)
             const clampedX = Math.max(75, Math.min(cWidth - 75, x));
-            // Flip logic: if Y is too close to top edge (< 110px), flip below
-            const flipped = isPos ? y < 110 : y > cHeight - 110;
+            
+            // Flip logic: if cursor Y is near top (< 120px), place tooltip below cursor
+            const flipped = y < 120;
+            
             setBarTooltip({
               x: clampedX,
               y,
@@ -183,7 +191,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               dateStr: curr.dateStr,
               primaryValue: curr.primaryValue,
               secondaryValue: curr.secondaryValue,
-              valueColor: curr.isPositive ? 'text-emerald-400' : 'text-rose-400',
+              valueColor: isPos ? 'text-emerald-400' : 'text-rose-400',
             });
           } else {
             setBarTooltip(null);
@@ -822,31 +830,29 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       </div>
 
       {/* Lightweight Chart Canvas Container with Anchored Tooltip */}
-      <div class="w-full h-[375px] rounded-xl overflow-hidden relative border border-slate-950 shadow-inner">
-        <div ref={chartContainer} class="w-full h-full" />
+      <div class="w-full h-[375px] rounded-xl relative border border-slate-950 shadow-inner">
+        <div ref={chartContainer} class="w-full h-full rounded-xl overflow-hidden" />
         
         <Show when={barTooltip()}>
           {(tip) => {
-            const isPos = tip().isPositive;
             const flipped = tip().flipped;
-            const pointDown = (isPos && !flipped) || (!isPos && flipped);
             return (
               <div
-                class="pointer-events-none absolute z-30 transition-transform duration-75 select-none"
+                class="pointer-events-none absolute z-50 transition-all duration-75 select-none"
                 style={{
                   left: `${tip().x}px`,
                   top: `${tip().y}px`,
-                  transform: pointDown
-                    ? 'translate(-50%, calc(-100% - 10px))'
-                    : 'translate(-50%, 10px)',
+                  transform: flipped
+                    ? 'translate(-50%, 14px)'
+                    : 'translate(-50%, calc(-100% - 14px))',
                 }}
               >
                 <div class="relative bg-slate-900/95 border border-slate-700/90 shadow-2xl backdrop-blur-md rounded-xl px-3.5 py-2.5 text-center min-w-[130px] flex flex-col gap-0.5">
-                  {/* Caret pointing to bar */}
-                  <Show when={pointDown}>
+                  {/* Caret pointing to cursor */}
+                  <Show when={!flipped}>
                     <div class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 border-r border-b border-slate-700/90 rotate-45" />
                   </Show>
-                  <Show when={!pointDown}>
+                  <Show when={flipped}>
                     <div class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 border-l border-t border-slate-700/90 rotate-45" />
                   </Show>
 
