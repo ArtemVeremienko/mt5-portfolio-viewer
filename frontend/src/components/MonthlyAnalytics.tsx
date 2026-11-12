@@ -1,6 +1,6 @@
 import { Component, createSignal, For, Show } from 'solid-js';
 import { MonthlyAnalyticsItem, MonthlyCurrency, MetricMode } from '../types';
-import { SlidersHorizontal, Calendar, PieChart as PieIcon, BarChart2, Clock, Check } from 'lucide-solid';
+import { Calendar, PieChart as PieIcon, BarChart2, Clock, Check } from 'lucide-solid';
 
 interface MonthlyAnalyticsProps {
   monthlyAnalytics: MonthlyAnalyticsItem[];
@@ -22,7 +22,6 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
 
   const [selectedYear, setSelectedYear] = createSignal<number | null>(null);
   const [metric, setMetric] = createSignal<MonthlyMetric>('change');
-  const [showSettingsPopover, setShowSettingsPopover] = createSignal<boolean>(false);
 
   const activeYear = () => {
     const yr = selectedYear();
@@ -120,80 +119,22 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
           </div>
         </div>
 
-        {/* Right Controls: Quick Inline Toggle + Sliders Popover */}
-        <div class="flex items-center gap-2">
-          {/* Quick Inline Metric Toggle */}
-          <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
-            <For each={['change', 'profit', 'lots', 'pips'] as MonthlyMetric[]}>
-              {(m) => (
-                <button
-                  onClick={() => setMetric(m)}
-                  class={`px-2.5 py-1 rounded-lg font-semibold capitalize transition-colors ${
-                    metric() === m
-                      ? 'bg-blue-600 text-white shadow'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {m}
-                </button>
-              )}
-            </For>
-          </div>
-
-          {/* Settings Sliders Icon Button */}
-          <div class="relative">
-            <button
-              onClick={() => setShowSettingsPopover(p => !p)}
-              class={`p-2 rounded-xl border transition-colors ${
-                showSettingsPopover()
-                  ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/30'
-                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-              title="Metric Options"
-            >
-              <SlidersHorizontal size={17} />
-            </button>
-
-            {/* Floating Radio Popover (Matching Image 1 & 3) */}
-            <Show when={showSettingsPopover()}>
-              <div class="absolute right-0 top-12 z-50 bg-slate-900/98 border border-slate-700 rounded-2xl p-3 shadow-2xl ring-1 ring-slate-700/50 w-44 space-y-1 backdrop-blur-md animate-in fade-in">
-                <div class="text-[10px] uppercase font-bold text-slate-400 px-2 pb-1 border-b border-slate-800">
-                  Select Metric
-                </div>
-                <For each={[
-                  { id: 'change', label: 'Change' },
-                  { id: 'profit', label: 'Profit' },
-                  { id: 'lots', label: 'Lots' },
-                  { id: 'pips', label: 'Pips' },
-                ] as { id: MonthlyMetric; label: string }[]}>
-                  {(opt) => (
-                    <button
-                      onClick={() => {
-                        setMetric(opt.id);
-                        setShowSettingsPopover(false);
-                      }}
-                      class={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
-                        metric() === opt.id
-                          ? 'bg-blue-600/20 text-blue-300 font-bold border border-blue-500/30'
-                          : 'text-slate-300 hover:bg-slate-800/60'
-                      }`}
-                    >
-                      <div class="flex items-center gap-2.5">
-                        <span class={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                          metric() === opt.id ? 'border-blue-400 bg-blue-600' : 'border-slate-600 bg-slate-950'
-                        }`}>
-                          <Show when={metric() === opt.id}>
-                            <span class="w-1.5 h-1.5 rounded-full bg-white" />
-                          </Show>
-                        </span>
-                        <span>{opt.label}</span>
-                      </div>
-                    </button>
-                  )}
-                </For>
-              </div>
-            </Show>
-          </div>
+        {/* Right Controls: Metric Pills Switcher */}
+        <div class="flex items-center gap-1 bg-slate-950 p-1.5 rounded-xl border border-slate-800 text-xs shadow-inner">
+          <For each={['change', 'profit', 'lots', 'pips'] as MonthlyMetric[]}>
+            {(m) => (
+              <button
+                onClick={() => setMetric(m)}
+                class={`px-3.5 py-1.5 rounded-lg font-semibold capitalize transition-all ${
+                  metric() === m
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-bold'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                {m}
+              </button>
+            )}
+          </For>
         </div>
       </div>
 
