@@ -38,7 +38,7 @@ export const SidebarStats: Component<SidebarStatsProps> = (props) => {
             {acc()?.is_demo ? 'Demo' : 'Real (Live)'}
           </span>
         </div>
-        <h2 class="text-lg font-bold text-white mt-1 truncate" title={acc()?.name}>
+        <h2 class="text-base font-bold text-white mt-1 break-words leading-snug" title={acc()?.name}>
           {acc()?.name || 'Primary Portfolio'}
         </h2>
         <div class="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">

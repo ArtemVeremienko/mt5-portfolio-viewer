@@ -1,11 +1,14 @@
 import { Component, createSignal, For, Show } from 'solid-js';
-import { TradeDeal, OpenPosition, MetricMode } from '../types';
-import { ListFilter, Search, ArrowUpRight, ArrowDownRight } from 'lucide-solid';
+import { TradeDeal, OpenPosition, MetricMode, TradeScope } from '../types';
+import { ListFilter, Search, ArrowUpRight, ArrowDownRight, History } from 'lucide-solid';
 
 interface TradesTableProps {
   openTrades: OpenPosition[];
   closedTrades: TradeDeal[];
   mode: MetricMode;
+  tradeScope?: TradeScope;
+  availableTrades?: number;
+  onSelectTradeScope?: (scope: TradeScope) => void;
 }
 
 export const TradesTable: Component<TradesTableProps> = (props) => {
@@ -74,19 +77,50 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
           </button>
         </div>
 
-        {/* Filter input */}
-        <div class="relative w-full sm:w-64">
-          <Search size={14} class="absolute left-3 top-2.5 text-slate-500" />
-          <input
-            type="text"
-            placeholder="Search symbol, ticket..."
-            value={searchQuery()}
-            onInput={(e) => {
-              setSearchQuery(e.currentTarget.value);
-              setPage(1);
-            }}
-            class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 transition-colors"
-          />
+        {/* Right Controls: Scope Toggle + Search Input */}
+        <div class="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end">
+          <Show when={props.onSelectTradeScope}>
+            <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs shadow-inner">
+              <button
+                class={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                  props.tradeScope === 'all'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                onClick={() => props.onSelectTradeScope?.('all')}
+                title="Analyze all historical trades"
+              >
+                All ({props.availableTrades || props.closedTrades.length})
+              </button>
+              <button
+                class={`px-2.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1.5 ${
+                  props.tradeScope === 'last100'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-purple-300 hover:text-white'
+                }`}
+                onClick={() => props.onSelectTradeScope?.('last100')}
+                title="Isolate performance strictly to the last 100 trades"
+              >
+                <History size={12} />
+                <span>Last 100</span>
+              </button>
+            </div>
+          </Show>
+
+          {/* Filter input */}
+          <div class="relative w-full sm:w-56">
+            <Search size={14} class="absolute left-3 top-2.5 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Search symbol, ticket..."
+              value={searchQuery()}
+              onInput={(e) => {
+                setSearchQuery(e.currentTarget.value);
+                setPage(1);
+              }}
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
         </div>
       </div>
 

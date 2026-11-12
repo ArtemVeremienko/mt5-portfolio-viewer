@@ -19,12 +19,9 @@ interface HeaderProps {
   isMt5Connected: boolean;
   isWsConnected: boolean;
   mode: MetricMode;
-  tradeScope: TradeScope;
-  availableTrades: number;
   isSyncing: boolean;
   onSelectAccount: (login: number) => void;
   onSelectMode: (mode: MetricMode) => void;
-  onSelectTradeScope: (scope: TradeScope) => void;
   onSync: () => void;
 }
 
@@ -42,9 +39,6 @@ export const Header: Component<HeaderProps> = (props) => {
             <div>
               <div class="flex items-center gap-2">
                 <h1 class="text-base font-bold text-white tracking-tight">MT5 Portfolio Viewer</h1>
-                <span class="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  Myfxbook Analog
-                </span>
               </div>
               <p class="text-xs text-slate-400">MetaTrader 5 Automated Analytics</p>
             </div>
@@ -68,9 +62,8 @@ export const Header: Component<HeaderProps> = (props) => {
           </div>
         </div>
 
-        {/* Center: Controls Group (Metric Mode + Global Trade Scope) */}
-        <div class="flex flex-wrap items-center gap-2.5">
-          {/* Metric Mode Switcher */}
+        {/* Center: Metric Mode Switcher */}
+        <div class="flex items-center">
           <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
             <button
               class={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -111,36 +104,6 @@ export const Header: Component<HeaderProps> = (props) => {
               <span>R-Multiple</span>
               <span class="text-[9px] bg-purple-950/80 text-purple-200 px-1 py-0.2 rounded border border-purple-500/30 font-mono">
                 1R
-              </span>
-            </button>
-          </div>
-
-          {/* Global Trade Scope Filter */}
-          <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner text-xs">
-            <button
-              class={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${
-                props.tradeScope === 'all'
-                  ? 'bg-slate-800 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-              onClick={() => props.onSelectTradeScope('all')}
-              title="Analyze all historical trades"
-            >
-              All Trades ({props.availableTrades})
-            </button>
-            <button
-              class={`px-2.5 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 ${
-                props.tradeScope === 'last100'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-purple-300 hover:text-white'
-              }`}
-              onClick={() => props.onSelectTradeScope('last100')}
-              title={props.availableTrades < 100 ? `Current sample has ${props.availableTrades} trades (< 100 benchmark)` : 'Isolate performance strictly to the last 100 trades'}
-            >
-              <History size={12} />
-              <span>Last 100</span>
-              <span class="text-[10px] px-1 py-0.2 rounded bg-black/40 font-mono text-purple-200">
-                {Math.min(100, props.availableTrades)}
               </span>
             </button>
           </div>

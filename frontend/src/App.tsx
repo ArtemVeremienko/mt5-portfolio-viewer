@@ -198,16 +198,10 @@ export const App: Component = () => {
         isMt5Connected={isMt5Connected()}
         isWsConnected={isWsConnected()}
         mode={metricMode()}
-        tradeScope={tradeScope()}
-        availableTrades={portfolioData()?.stats?.available_closed_trades || portfolioData()?.stats?.total_trades || 0}
         isSyncing={isSyncing()}
         onSelectAccount={handleSelectAccount}
         onSelectMode={(m) => {
           setMetricMode(m);
-        }}
-        onSelectTradeScope={(scope) => {
-          setTradeScope(scope);
-          fetchPortfolio(scope);
         }}
         onSync={handleSync}
       />
@@ -412,6 +406,12 @@ export const App: Component = () => {
               openTrades={openTrades()}
               closedTrades={portfolioData()?.closed_trades || []}
               mode={metricMode()}
+              tradeScope={tradeScope()}
+              availableTrades={portfolioData()?.stats?.available_closed_trades || portfolioData()?.stats?.total_trades || 0}
+              onSelectTradeScope={(scope) => {
+                setTradeScope(scope);
+                fetchPortfolio(scope);
+              }}
             />
           </Show>
 

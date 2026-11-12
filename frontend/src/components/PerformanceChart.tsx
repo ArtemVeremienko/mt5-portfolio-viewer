@@ -23,6 +23,9 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   
   // Active series references for dynamic cleanup
   let seriesList: ISeriesApi<any>[] = [];
+  let activeBarSeries: ISeriesApi<any> | null = null;
+  let barDataMap = new Map<number, { time: any; value: number; dimmedColor: string; hoverColor: string }>();
+  let lastHoveredTime: number | null = null;
 
   const [activeTab, setActiveTab] = createSignal<ChartTab>('growth');
   const [activeTimeframe, setActiveTimeframe] = createSignal<string>('ALL');
@@ -84,8 +87,8 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         visible: false,
         autoScale: true,
         scaleMargins: {
-          top: 0.72,
-          bottom: 0.02,
+          top: 0.10,
+          bottom: 0.10,
         },
       },
       rightPriceScale: {
@@ -93,7 +96,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         autoScale: true,
         scaleMargins: {
           top: 0.08,
-          bottom: 0.32,
+          bottom: 0.10,
         },
       },
       handleScale: {
@@ -101,6 +104,27 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         mouseWheel: true,
         pinch: true,
       },
+    });
+
+    // Crosshair hover: illuminate hovered change bar to vivid opacity O(1)
+    chart.subscribeCrosshairMove((param) => {
+      if (!activeBarSeries || !barDataMap.size) return;
+      const time = param.time as number | undefined;
+      if (time !== undefined && barDataMap.has(time)) {
+        if (lastHoveredTime !== null && lastHoveredTime !== time && barDataMap.has(lastHoveredTime)) {
+          const prev = barDataMap.get(lastHoveredTime)!;
+          activeBarSeries.update({ time: prev.time, value: prev.value, color: prev.dimmedColor });
+        }
+        const curr = barDataMap.get(time)!;
+        activeBarSeries.update({ time: curr.time, value: curr.value, color: curr.hoverColor });
+        lastHoveredTime = time;
+      } else {
+        if (lastHoveredTime !== null && barDataMap.has(lastHoveredTime)) {
+          const prev = barDataMap.get(lastHoveredTime)!;
+          activeBarSeries.update({ time: prev.time, value: prev.value, color: prev.dimmedColor });
+          lastHoveredTime = null;
+        }
+      }
     });
 
     updateChartData();
@@ -116,6 +140,9 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       }
     }
     seriesList = [];
+    activeBarSeries = null;
+    barDataMap.clear();
+    lastHoveredTime = null;
   };
 
   const updateChartData = () => {
@@ -147,38 +174,43 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     const tab = activeTab();
     const hasBars = showChangeBars() && tab !== 'drawdown';
 
-    // Split scaling: upper region for main curves, bottom 28% region for trade bars
+    // Split scaling: upper region for main curves, bars take ~80% of chart space with dimmed colors
     chart.priceScale('right').applyOptions({
       scaleMargins: {
         top: 0.08,
-        bottom: hasBars ? 0.32 : 0.08,
+        bottom: 0.10,
       },
     });
     chart.priceScale('left').applyOptions({
       visible: false,
       autoScale: true,
       scaleMargins: {
-        top: 0.72,
-        bottom: 0.02,
+        top: 0.10,
+        bottom: 0.10,
       },
     });
 
     if (tab === 'growth') {
-      // 1. Change Bars (%) on left scale (bottom 28% region)
+      // 1. Change Bars (%) on left scale (~80% chart space, dimmed default, bright hover)
       if (showChangeBars()) {
         const barSeries = chart.addSeries(HistogramSeries, {
           priceFormat: { type: 'percent' },
           priceScaleId: 'left',
           title: 'Change (%)',
         });
-        barSeries.setData(sortedData.map(d => {
+        activeBarSeries = barSeries;
+        const barItems = sortedData.map(d => {
           const val = d.change_pct ?? 0;
+          const dimmedColor = val >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)';
+          const hoverColor = val >= 0 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(244, 63, 94, 0.95)';
+          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, dimmedColor, hoverColor });
           return {
             time: d.timestamp as any,
             value: val,
-            color: val >= 0 ? 'rgba(16, 185, 129, 0.65)' : 'rgba(244, 63, 94, 0.65)'
+            color: dimmedColor,
           };
-        }));
+        });
+        barSeries.setData(barItems);
         seriesList.push(barSeries);
       }
 
@@ -211,20 +243,25 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       }
 
     } else if (tab === 'balance') {
-      // 1. Profit Change Bars ($) on left scale (bottom 28% region)
+      // 1. Profit Change Bars ($) on left scale (~80% chart space)
       if (showChangeBars()) {
         const barSeries = chart.addSeries(HistogramSeries, {
           priceScaleId: 'left',
           title: 'Trade Profit ($)',
         });
-        barSeries.setData(sortedData.map(d => {
+        activeBarSeries = barSeries;
+        const barItems = sortedData.map(d => {
           const val = d.change_amount ?? 0;
+          const dimmedColor = val >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)';
+          const hoverColor = val >= 0 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(244, 63, 94, 0.95)';
+          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, dimmedColor, hoverColor });
           return {
             time: d.timestamp as any,
             value: val,
-            color: val >= 0 ? 'rgba(16, 185, 129, 0.65)' : 'rgba(244, 63, 94, 0.65)'
+            color: dimmedColor,
           };
-        }));
+        });
+        barSeries.setData(barItems);
         seriesList.push(barSeries);
       }
 
@@ -253,20 +290,25 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       }
 
     } else if (tab === 'profit') {
-      // 1. Trade Profit Bars ($) on left scale (bottom 28% region)
+      // 1. Trade Profit Bars ($) on left scale (~80% chart space)
       if (showChangeBars()) {
         const barSeries = chart.addSeries(HistogramSeries, {
           priceScaleId: 'left',
           title: 'Trade Return ($)',
         });
-        barSeries.setData(sortedData.map(d => {
+        activeBarSeries = barSeries;
+        const barItems = sortedData.map(d => {
           const val = d.change_amount ?? 0;
+          const dimmedColor = val >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)';
+          const hoverColor = val >= 0 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(244, 63, 94, 0.95)';
+          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, dimmedColor, hoverColor });
           return {
             time: d.timestamp as any,
             value: val,
-            color: val >= 0 ? 'rgba(16, 185, 129, 0.65)' : 'rgba(244, 63, 94, 0.65)'
+            color: dimmedColor,
           };
-        }));
+        });
+        barSeries.setData(barItems);
         seriesList.push(barSeries);
       }
 
@@ -302,7 +344,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       }
 
     } else if (tab === 'r') {
-      // 1. R-Multiple Bars on left scale (bottom 28% region)
+      // 1. R-Multiple Bars on left scale (~80% chart space)
       if (showChangeBars()) {
         const barSeries = chart.addSeries(HistogramSeries, {
           priceScaleId: 'left',
@@ -312,14 +354,19 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           },
           title: 'Trade R',
         });
-        barSeries.setData(sortedData.map(d => {
+        activeBarSeries = barSeries;
+        const barItems = sortedData.map(d => {
           const val = d.change_r ?? 0;
+          const dimmedColor = val >= 0 ? 'rgba(168, 85, 247, 0.28)' : 'rgba(244, 63, 94, 0.28)';
+          const hoverColor = val >= 0 ? 'rgba(168, 85, 247, 0.95)' : 'rgba(244, 63, 94, 0.95)';
+          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, dimmedColor, hoverColor });
           return {
             time: d.timestamp as any,
             value: val,
-            color: val >= 0 ? 'rgba(168, 85, 247, 0.70)' : 'rgba(244, 63, 94, 0.70)'
+            color: dimmedColor,
           };
-        }));
+        });
+        barSeries.setData(barItems);
         seriesList.push(barSeries);
       }
 
@@ -440,15 +487,9 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         </div>
       </div>
 
-      {/* Lightweight Chart Canvas Container */}
-      <div 
-        ref={chartContainer} 
-        class="w-full h-[370px] rounded-xl overflow-hidden relative border border-slate-950 shadow-inner"
-      />
-
-      {/* Bottom Series Legend Toggles (Authentic Myfxbook Style) */}
-      <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60 text-xs">
-        <div class="flex flex-wrap items-center gap-2">
+      {/* Interactive Series Legend Bar (Compact Above Canvas) */}
+      <div class="flex flex-wrap items-center justify-between gap-2 px-1 text-xs">
+        <div class="flex flex-wrap items-center gap-1.5">
           {/* Toggles for Growth View */}
           <Show when={activeTab() === 'growth'}>
             <button
@@ -456,7 +497,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showGrowth()
                   ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-50'
               }`}
             >
               <span class={`h-2 w-2 rounded-full ${showGrowth() ? 'bg-emerald-400' : 'bg-slate-600'}`}></span>
@@ -468,7 +509,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showEquityGrowth()
                   ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-50'
               }`}
             >
               <span class={`h-2 w-2 rounded-full ${showEquityGrowth() ? 'bg-amber-400' : 'bg-slate-600'}`}></span>
@@ -480,7 +521,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showChangeBars()
                   ? 'bg-blue-500/10 border-blue-500/40 text-blue-300 font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-50'
               }`}
             >
               <span class="flex items-end gap-0.5 h-3">
@@ -498,7 +539,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showBalance()
                   ? 'bg-blue-500/10 border-blue-500/40 text-blue-400 font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-50'
               }`}
             >
               <span class={`h-2 w-2 rounded-full ${showBalance() ? 'bg-blue-400' : 'bg-slate-600'}`}></span>
@@ -510,7 +551,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showEquity()
                   ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-50'
               }`}
             >
               <span class={`h-2 w-2 rounded-full ${showEquity() ? 'bg-amber-400' : 'bg-slate-600'}`}></span>
@@ -522,7 +563,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showChangeBars()
                   ? 'bg-blue-500/10 border-blue-500/40 text-blue-300 font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-50'
               }`}
             >
               <span class="flex items-end gap-0.5 h-3">
@@ -540,7 +581,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showProfit()
                   ? 'bg-blue-500/10 border-blue-500/40 text-blue-400 font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-50'
               }`}
             >
               <span class={`h-2 w-2 rounded-full ${showProfit() ? 'bg-blue-400' : 'bg-slate-600'}`}></span>
@@ -552,7 +593,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showChangeBars()
                   ? 'bg-blue-500/10 border-blue-500/40 text-blue-300 font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-50'
               }`}
             >
               <span class="flex items-end gap-0.5 h-3">
@@ -570,7 +611,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showDrawdown()
                   ? 'bg-rose-500/10 border-rose-500/40 text-rose-400 font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-50'
               }`}
             >
               <span class={`h-2 w-2 rounded-full ${showDrawdown() ? 'bg-rose-400' : 'bg-slate-600'}`}></span>
@@ -585,7 +626,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showRCurve()
                   ? 'bg-purple-500/10 border-purple-500/40 text-purple-300 font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-50'
               }`}
             >
               <span class={`h-2 w-2 rounded-full ${showRCurve() ? 'bg-purple-400' : 'bg-slate-600'}`}></span>
@@ -597,7 +638,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showChangeBars()
                   ? 'bg-purple-500/10 border-purple-500/40 text-purple-300 font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 line-through opacity-50'
               }`}
             >
               <span class="flex items-end gap-0.5 h-3">
@@ -609,11 +650,16 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           </Show>
         </div>
 
-        <span class="text-[11px] text-slate-500 italic hidden sm:inline">
-          Click series pill to toggle visibility
+        <span class="text-[10px] text-slate-500 italic hidden sm:inline">
+          Click series pill to toggle
         </span>
       </div>
 
+      {/* Lightweight Chart Canvas Container */}
+      <div 
+        ref={chartContainer} 
+        class="w-full h-[375px] rounded-xl overflow-hidden relative border border-slate-950 shadow-inner"
+      />
     </div>
   );
 };
