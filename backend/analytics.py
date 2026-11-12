@@ -7,30 +7,38 @@ import pandas as pd
 def compute_1r_risk(deal: Dict[str, Any], balance_at_entry: float, default_risk_pct: float = 0.01) -> float:
     """
     Computes 1R (initial risk in account currency) for a trade.
-    If deal has an explicitly computed risk_r (> 0.01), reuse it.
-    If deal has a valid Stop Loss (sl), calculate risk from entry distance.
-    Otherwise, fall back to default_risk_pct of account balance at entry (min 0.10 currency units for micro accounts).
+    A valid initial Stop Loss must be strictly on the losing side of entry price:
+      - BUY (type 0): sl < open_price
+      - SELL (type 1): sl > open_price
+    If deal has a valid initial Stop Loss, calculate risk from entry distance.
+    If no valid initial Stop Loss was placed (e.g. sl=0 or trailing stop in profit),
+    fall back to the Van Tharp fixed % risk model (default 1% of balance at entry, floor $0.20 for micro accounts).
     """
+    open_price = float(deal.get("open_price", 0.0) or deal.get("price", 0.0) or 0.0)
+    sl = float(deal.get("sl", 0.0) or 0.0)
+    pos_type = int(deal.get("type", 0) or 0)
+    volume = float(deal.get("volume", 0.01) or 0.01)
+
+    # Validate that Stop Loss was strictly placed on the losing side of the trade
+    is_valid_initial_sl = False
+    diff = 0.0
+    if sl > 0 and open_price > 0:
+        if pos_type == 0 and sl < open_price - 1e-5: # BUY
+            is_valid_initial_sl = True
+            diff = open_price - sl
+        elif pos_type == 1 and sl > open_price + 1e-5: # SELL
+            is_valid_initial_sl = True
+            diff = sl - open_price
+
+    # Only reuse stored risk_r if the trade had a genuine initial Stop Loss
     existing_risk = deal.get("risk_r", 0.0)
-    if existing_risk and float(existing_risk) > 0.01:
+    if is_valid_initial_sl and existing_risk and float(existing_risk) > 0.01:
         return round(float(existing_risk), 2)
 
-    open_price = deal.get("open_price", 0.0) or deal.get("price", 0.0)
-    sl = deal.get("sl", 0.0)
-    volume = deal.get("volume", 0.01)
-    
-    # Check if a valid SL was set
-    valid_sl = False
-    diff = 0.0
-    if sl and sl > 0 and open_price > 0:
-        diff = abs(open_price - sl)
-        if diff > 1e-6:
-            valid_sl = True
-            
-    if valid_sl and open_price > 0:
+    if is_valid_initial_sl and open_price > 0 and diff > 1e-6:
         # If profit and close price exist, derive exact per-point value
-        close_price = deal.get("price", 0.0)
-        net_profit = deal.get("profit", 0.0)
+        close_price = float(deal.get("price", 0.0) or 0.0)
+        net_profit = float(deal.get("profit", 0.0) or 0.0)
         price_diff = abs(close_price - open_price)
         if price_diff > 1e-6 and abs(net_profit) > 1e-4:
             val_per_point = abs(net_profit) / price_diff
@@ -51,8 +59,8 @@ def compute_1r_risk(deal: Dict[str, Any], balance_at_entry: float, default_risk_
         if derived_risk > 0.01:
             return round(derived_risk, 2)
 
-    # Fallback: Van Tharp fixed % risk model (e.g. 1% of balance at entry, floor $0.10 for micro accounts)
-    fallback_risk = max(0.10, balance_at_entry * default_risk_pct)
+    # Fallback: Van Tharp fixed % risk model (1% of balance at entry, floor $0.20 for micro accounts)
+    fallback_risk = max(0.20, round(balance_at_entry * default_risk_pct, 2))
     return round(fallback_risk, 2)
 
 
@@ -293,10 +301,22 @@ def process_portfolio_analytics(
                 mae_r = round(mae_amt / risk_1r, 2) if risk_1r > 0 else float(d.get("mae_r", 0.0) or 0.0)
                 mfe_r = round(mfe_amt / risk_1r, 2) if risk_1r > 0 else float(d.get("mfe_r", 0.0) or 0.0)
 
+                open_p = float(d.get("open_price", 0.0) or d.get("price", 0.0) or 0.0)
+                sl_p = float(d.get("sl", 0.0) or 0.0)
+                d_type = int(d.get("type", 0) or 0)
+                has_initial_sl = (sl_p > 0 and open_p > 0 and (
+                    (d_type == 0 and sl_p < open_p - 1e-5) or
+                    (d_type == 1 and sl_p > open_p + 1e-5)
+                ))
+                risk_source = "sl" if has_initial_sl else "balance_pct"
+                sl_diff_pts = round(abs(open_p - sl_p), 1) if has_initial_sl else 0.0
+
                 deal_record = dict(d)
                 deal_record["net_profit"] = net_trade_profit
                 deal_record["risk_r"] = risk_1r
                 deal_record["r_multiple"] = r_mult
+                deal_record["risk_source"] = risk_source
+                deal_record["sl_diff_pts"] = sl_diff_pts
                 deal_record["mae_amount"] = mae_amt
                 deal_record["mfe_amount"] = mfe_amt
                 deal_record["mae_pips"] = mae_pips

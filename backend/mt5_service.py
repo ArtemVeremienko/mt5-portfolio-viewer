@@ -346,16 +346,30 @@ class MT5Service:
                         )
 
                     # Compute 1R risk amount in currency for this deal
-                    diff_pts = abs(open_price_val - sl_val) if sl_val > 0 else 0.0
+                    # Validate that Stop Loss was strictly placed on the losing side of entry price:
+                    # BUY: sl < open_price; SELL: sl > open_price
+                    is_valid_initial_sl = False
+                    if sl_val > 0 and open_price_val > 0:
+                        if pos_type == 0 and sl_val < open_price_val - 1e-5:
+                            is_valid_initial_sl = True
+                        elif pos_type == 1 and sl_val > open_price_val + 1e-5:
+                            is_valid_initial_sl = True
+
+                    diff_pts = abs(open_price_val - sl_val) if is_valid_initial_sl else 0.0
                     price_diff = abs(d.price - open_price_val)
                     net_profit = d.profit + d.swap + d.commission
-                    if diff_pts > 0 and price_diff > 1e-6 and abs(net_profit) > 1e-4:
-                        risk_r = round(diff_pts * (abs(net_profit) / price_diff), 2)
-                    elif diff_pts > 0:
-                        calc = mt5.order_calc_profit(pos_type, d.symbol or "", d.volume, open_price_val, sl_val)
-                        risk_r = round(abs(calc), 2) if calc is not None else 0.20
+
+                    if is_valid_initial_sl and diff_pts > 0:
+                        if price_diff > 1e-6 and abs(net_profit) > 1e-4:
+                            risk_r = round(diff_pts * (abs(net_profit) / price_diff), 2)
+                        else:
+                            calc = mt5.order_calc_profit(pos_type, d.symbol or "", d.volume, open_price_val, sl_val)
+                            risk_r = round(abs(calc), 2) if calc is not None else 0.20
                     else:
-                        risk_r = 0.25 # Micro account fallback
+                        # Fallback: account risk model (1% balance, floor $0.20 for micro accounts)
+                        acc_info = self.get_account_info()
+                        acc_bal = float(acc_info.get("balance", 20.0) if acc_info else 20.0)
+                        risk_r = max(0.20, round(acc_bal * 0.01, 2))
 
                     if risk_r < 0.05:
                         risk_r = 0.20

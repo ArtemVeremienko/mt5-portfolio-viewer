@@ -167,11 +167,18 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                         </span>
                       </td>
                       <td class="py-2 px-2 text-right font-bold">
-                        <span class={`px-2 py-0.5 rounded text-xs font-mono ${
-                          t.r_multiple > 0
-                            ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
-                            : (t.r_multiple < 0 ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30' : 'text-slate-400')
-                        }`}>
+                        <span 
+                          title={
+                            t.risk_source === 'sl'
+                              ? `1R = $${(t.risk_r || 0.20).toFixed(2)} (Initial SL: ${t.sl_diff_pts || '—'} pts)`
+                              : `1R = $${(t.risk_r || 0.20).toFixed(2)} (1% Account Risk Model)`
+                          }
+                          class={`px-2 py-0.5 rounded text-xs font-mono cursor-help ${
+                            t.r_multiple > 0
+                              ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                              : (t.r_multiple < 0 ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30' : 'text-slate-400')
+                          }`}
+                        >
                           {t.r_multiple > 0 ? `+${t.r_multiple.toFixed(2)}R` : `${t.r_multiple.toFixed(2)}R`}
                         </span>
                       </td>

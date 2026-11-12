@@ -77,11 +77,15 @@ For each closed trade, `_calculate_trade_excursion`:
 ## 5. Analytics Engine (`backend/analytics.py`)
 
 ### 5.1 1R Risk Modeling
-- If a valid Stop Loss was set:
+- **Initial Stop Loss Validation**:
+  - A Stop Loss is strictly validated to ensure it was on the losing side of entry:
+    - **BUY**: $\text{sl} < \text{open\_price}$
+    - **SELL**: $\text{sl} > \text{open\_price}$
+  - Trailing stops in profit or breakeven stops (e.g. `[sl ...]` closing comments located on the profitable side of entry) are **not** treated as initial risk.
+- **When a valid initial Stop Loss was set**:
   $$\text{1R Risk} = \text{order\_calc\_profit}(\text{direction}, \text{symbol}, \text{volume}, \text{open\_price}, \text{sl})$$
-- If no Stop Loss was set:
-  - Estimate from instrument's 20-period ATR or pip value.
-  - Micro-account safeguard: Minimum floor of `$0.10` (scaled to prevent uncalibrated `$10.00` defaults on small balance accounts).
+- **When no valid initial Stop Loss was set (or trailing stop in profit)**:
+  - Falls back to the Van Tharp fixed-risk model: $1\%$ of account balance at entry ($\max(\$0.20, \text{balance} \times 0.01)$ micro-account safeguard).
 
 ### 5.2 Van Tharp SQN (System Quality Number)
 $$\text{SQN} = \frac{\bar{R}}{\sigma_R} \times \min(10.0, \sqrt{N})$$

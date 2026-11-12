@@ -38,6 +38,24 @@ def test_compute_1r_risk_without_sl():
     risk = compute_1r_risk(deal_no_sl, balance_at_entry=10000.0, default_risk_pct=0.01)
     assert risk == 100.0
 
+def test_compute_1r_risk_trailing_stop_in_profit():
+    # SELL trade where SL is at 26851.6 (below entry 26857.8, i.e. in profit)
+    # This must NOT be treated as initial risk ($0.07), but must fall back to account risk model
+    deal_sell_trailing = {
+        "open_price": 26857.8,
+        "sl": 26851.6, # In profit for SELL!
+        "type": 1,     # SELL
+        "volume": 0.01,
+        "symbol": ".DE40Cash",
+        "price": 26851.6,
+        "profit": 0.07,
+        "risk_r": 0.07 # Corrupted stored value
+    }
+    risk = compute_1r_risk(deal_sell_trailing, balance_at_entry=23.40, default_risk_pct=0.01)
+    # Must use 1% of balance / floor ($0.23), NOT the corrupted $0.07
+    assert risk >= 0.20
+    assert abs(risk - 0.23) < 0.05
+
 def test_compute_1r_risk_micro_account():
     # Micro account $25 balance with DE40 trade
     deal_micro = {

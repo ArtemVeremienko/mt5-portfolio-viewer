@@ -282,6 +282,8 @@ export interface TradeDeal {
   mfe_pips?: number;
   mae_r?: number;
   mfe_r?: number;
+  risk_source?: 'sl' | 'balance_pct';
+  sl_diff_pts?: number;
 }
 
 export interface ExcursionTrade {

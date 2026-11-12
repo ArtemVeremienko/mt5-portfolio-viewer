@@ -39,7 +39,9 @@ export const VanTharpPanel: Component<VanTharpPanelProps> = (props) => {
                 1R Risk Metric
               </span>
             </h3>
-            <p class="text-xs text-slate-400">Normalizes performance by initial dollar risk (1R) to measure genuine trading edge.</p>
+            <p class="text-xs text-slate-400">
+              Normalizes performance by initial dollar risk (1R: Initial Stop Loss distance, or 1% balance / $0.20 micro floor) to measure genuine trading edge.
+            </p>
           </div>
         </div>
       </div>
