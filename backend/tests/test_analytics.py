@@ -221,3 +221,23 @@ def test_advanced_statistics_and_calendar():
     assert "reward_risk_ratio" in m0["currencies"][0]
     assert "popularity_pct" in m0["currencies"][0]
     assert "avg_long_duration_sec" in m0["currencies"][0]
+
+
+def test_entry_commission_twr_and_single_trade_sqn():
+    deals = [
+        {"ticket": 1, "order_id": 1, "position_id": 0, "time": 1000, "time_msc": 1000000, "type": 2, "entry": 0, "profit": 1000.0, "swap": 0.0, "commission": 0.0, "symbol": ""},
+        # Entry deal with ECN commission -5.0
+        {"ticket": 2, "order_id": 2, "position_id": 100, "time": 1500, "time_msc": 1500000, "type": 0, "entry": 0, "profit": 0.0, "swap": 0.0, "commission": -5.0, "symbol": "EURUSD", "volume": 0.1},
+        # Exit deal +105.0 gross -> +100.0 net after entry commission (+10% TWR)
+        {"ticket": 3, "order_id": 3, "position_id": 100, "time": 2000, "time_msc": 2000000, "type": 0, "entry": 1, "open_price": 1.08, "sl": 1.07, "price": 1.09, "profit": 105.0, "swap": 0.0, "commission": 0.0, "symbol": "EURUSD", "volume": 0.1},
+        # Subsequent deposit +1000.0 (Abs Gain = 100 / 2000 = 5%, TWR = +10%)
+        {"ticket": 4, "order_id": 4, "position_id": 0, "time": 3000, "time_msc": 3000000, "type": 2, "entry": 0, "profit": 1000.0, "swap": 0.0, "commission": 0.0, "symbol": ""},
+    ]
+    res = process_portfolio_analytics(deals, {"login": 1, "balance": 2100.0, "equity": 2100.0})
+    stats = res["stats"]
+    assert stats["total_commission"] == pytest.approx(-5.0, 0.01)
+    assert stats["total_profit"] == pytest.approx(100.0, 0.01)
+    assert stats["gain_pct"] == pytest.approx(10.0, 0.05)
+    assert stats["abs_gain_pct"] == pytest.approx(5.0, 0.05)
+    assert stats["sqn"] == 0.0
+    assert len(res["cashflows"]) == 2

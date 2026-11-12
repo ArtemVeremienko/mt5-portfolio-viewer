@@ -1,5 +1,5 @@
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 import numpy as np
 import pandas as pd
@@ -136,7 +136,10 @@ def process_portfolio_analytics(
     start_time: Optional[int] = None,
     end_time: Optional[int] = None,
     default_risk_pct: float = 0.01,
-    trade_scope: str = "all"
+    trade_scope: str = "all",
+    symbol: Optional[str] = None,
+    direction: Optional[str] = None,
+    comment: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Computes comprehensive Myfxbook performance statistics and Van Tharp R-Multiple analytics.
@@ -237,7 +240,23 @@ def process_portfolio_analytics(
             }
         }
 
-    # Filter deals by time window if provided
+    # Extract available symbols & comments across all deals for UI filter dropdowns
+    available_symbols = sorted({
+        str(x.get("symbol", "")).strip()
+        for x in deals
+        if x.get("entry") in (1, 2) and x.get("type") in (0, 1) and x.get("symbol")
+    })
+    available_comments = sorted({
+        str(x.get("comment", "")).strip()
+        for x in deals
+        if x.get("entry") in (1, 2) and x.get("type") in (0, 1) and x.get("comment")
+    })
+
+    # Filter deals by time window and optional symbol/direction/comment
+    dir_filter = direction.upper().strip() if direction else None
+    sym_filter = symbol.upper().strip() if symbol else None
+    cmt_filter = comment.lower().strip() if comment else None
+
     filtered_deals = []
     for d in deals:
         t = d.get("time", 0)
@@ -245,6 +264,15 @@ def process_portfolio_analytics(
             continue
         if end_time and t > end_time:
             continue
+        if d.get("type") != 2 and d.get("entry") in (1, 2):
+            if sym_filter and str(d.get("symbol", "")).upper() != sym_filter:
+                continue
+            if dir_filter == "BUY" and int(d.get("type", 0) or 0) != 0:
+                continue
+            if dir_filter == "SELL" and int(d.get("type", 0) or 0) != 1:
+                continue
+            if cmt_filter and cmt_filter not in str(d.get("comment", "")).lower():
+                continue
         filtered_deals.append(d)
 
     # Sort sequentially by time
@@ -254,28 +282,55 @@ def process_portfolio_analytics(
     all_closed_deals = [x for x in filtered_deals if x.get("entry") in (1, 2) and x.get("type") in (0, 1)]
     available_closed_count = len(all_closed_deals)
 
+    # Pre-collect entry (DEAL_ENTRY_IN) commissions/swaps by position_id so ECN round-turn fees are not dropped
+    entry_fees_by_pos: Dict[int, float] = {}
+    for x in filtered_deals:
+        if x.get("entry") == 0 and x.get("type") in (0, 1):
+            pid = int(x.get("position_id", 0) or 0)
+            if pid > 0:
+                entry_fees_by_pos[pid] = entry_fees_by_pos.get(pid, 0.0) + float(x.get("commission", 0.0) or 0.0)
+
     # Apply Trade Scope filter (e.g. last 100 closed trades)
-    if trade_scope == "last100" and available_closed_count > 0:
+    scope_starting_balance = 0.0
+    if trade_scope == "last100" and available_closed_count > 100:
+        first_100_time = all_closed_deals[-100].get("time", 0)
         target_closed_tickets = set(x["ticket"] for x in all_closed_deals[-100:])
-        # Retain cashflow balance operations (type == 2) and the selected 100 closed trades
+        # Compute exact balance prior to the last 100 trades
+        for x in filtered_deals:
+            if x.get("ticket") in target_closed_tickets:
+                break
+            if x.get("type") == 2:
+                scope_starting_balance += float(x.get("profit", 0.0) or 0.0)
+            elif x.get("entry") in (1, 2) and x.get("type") in (0, 1):
+                pid = int(x.get("position_id", 0) or 0)
+                in_comm = entry_fees_by_pos.get(pid, 0.0)
+                scope_starting_balance += float(x.get("profit", 0.0) or 0.0) + float(x.get("swap", 0.0) or 0.0) + float(x.get("commission", 0.0) or 0.0) + in_comm
+        # Retain only cashflow events that occurred during the last 100 trades window + the 100 closed trades
+        filtered_deals = [
+            x for x in filtered_deals
+            if (x.get("type") == 2 and x.get("time", 0) >= first_100_time) or x.get("ticket") in target_closed_tickets
+        ]
+    elif trade_scope == "last100" and available_closed_count > 0:
+        target_closed_tickets = set(x["ticket"] for x in all_closed_deals[-100:])
         filtered_deals = [x for x in filtered_deals if x.get("type") == 2 or x.get("ticket") in target_closed_tickets]
 
     # Track running balance & cash deposits/withdrawals
-    running_balance = 0.0
-    initial_deposit = 0.0
-    total_deposits = 0.0
+    running_balance = scope_starting_balance
+    initial_deposit = scope_starting_balance
+    total_deposits = scope_starting_balance if scope_starting_balance > 0 else 0.0
     total_withdrawals = 0.0
     
     trade_deals = []
+    cashflows = []
     daily_returns = {}
+    curve_events = []  # Interleaved ("cashflow" | "trade") for true TWR
     
     # Process cashflow & trades
     for d in filtered_deals:
         dtype = d.get("type", 0)
-        profit = d.get("profit", 0.0)
-        swap = d.get("swap", 0.0)
-        commission = d.get("commission", 0.0)
-        net_trade_profit = profit + swap + commission
+        profit = float(d.get("profit", 0.0) or 0.0)
+        swap = float(d.get("swap", 0.0) or 0.0)
+        commission = float(d.get("commission", 0.0) or 0.0)
 
         # Type 2 is BALANCE (Deposit/Withdrawal) in MT5
         if dtype == 2:
@@ -286,10 +341,24 @@ def process_portfolio_analytics(
             else:
                 total_withdrawals += abs(profit)
             running_balance += profit
+            cashflows.append({
+                "ticket": d.get("ticket", 0),
+                "time": d.get("time", 0),
+                "amount": round(profit, 2),
+                "type": "Deposit" if profit >= 0 else "Withdrawal",
+                "comment": d.get("comment", "") or "",
+                "balance_after": round(running_balance, 2),
+            })
+            curve_events.append(("cashflow", d.get("time", 0), profit))
         else:
             # Standard trade deal
             entry = d.get("entry", 1) # 1=OUT (close), 0=IN, 2=INOUT
             if entry in [1, 2]: # Out / Close deal
+                pid = int(d.get("position_id", 0) or 0)
+                matched_in_comm = entry_fees_by_pos.pop(pid, 0.0) if pid > 0 else 0.0
+                total_comm_deal = commission + matched_in_comm
+                net_trade_profit = profit + swap + total_comm_deal
+
                 # Calculate 1R initial risk
                 risk_1r = compute_1r_risk(d, max(1.0, running_balance), default_risk_pct)
                 r_mult = round(net_trade_profit / risk_1r, 3) if risk_1r > 0 else 0.0
@@ -309,9 +378,10 @@ def process_portfolio_analytics(
                     (d_type == 1 and sl_p > open_p + 1e-5)
                 ))
                 risk_source = "sl" if has_initial_sl else "balance_pct"
-                sl_diff_pts = round(abs(open_p - sl_p), 1) if has_initial_sl else 0.0
+                sl_diff_pts = round(abs(open_p - sl_p), 5) if has_initial_sl else 0.0
 
                 deal_record = dict(d)
+                deal_record["commission"] = round(total_comm_deal, 2)
                 deal_record["net_profit"] = net_trade_profit
                 deal_record["risk_r"] = risk_1r
                 deal_record["r_multiple"] = r_mult
@@ -336,6 +406,7 @@ def process_portfolio_analytics(
                 deal_record["type_str"] = "BUY" if int(d.get("type", 0) or 0) == 0 else "SELL"
                 
                 trade_deals.append(deal_record)
+                curve_events.append(("trade", close_t, deal_record))
 
                 running_balance += net_trade_profit
 
@@ -344,43 +415,89 @@ def process_portfolio_analytics(
         date_key = dt.strftime("%Y-%m-%d")
         daily_returns[date_key] = running_balance
 
-    # Curve construction (Balance, Equity, Growth %, Drawdown %, Cumulative R)
+    # Curve construction (Balance, Real Equity, True TWR Growth %, Drawdown %, Cumulative R)
     curves = []
-    peak_balance = initial_deposit if initial_deposit > 0 else (trade_deals[0]["net_profit"] if trade_deals else 0.0)
-    current_run_bal = 0.0
+    current_run_bal = scope_starting_balance
+    peak_balance = scope_starting_balance
+    peak_time = filtered_deals[0].get("time", 0) if filtered_deals else 0
+    max_dd_duration_sec = 0
     cum_r = 0.0
     max_dd_pct = 0.0
     max_dd_amount = 0.0
     max_dd_r = 0.0
     peak_r = 0.0
+    twr_factor = 1.0
+    equity_twr_factor = 1.0
+    cum_profit = 0.0
+    month_start_balances: Dict[tuple, float] = {}
 
-    # Start curve with initial state
-    if initial_deposit > 0:
-        current_run_bal = initial_deposit
+    if scope_starting_balance > 0 and filtered_deals:
         curves.append({
             "timestamp": filtered_deals[0].get("time", 0),
             "balance": round(current_run_bal, 2),
             "equity": round(current_run_bal, 2),
             "profit": 0.0,
             "growth_pct": 0.0,
+            "equity_growth_pct": 0.0,
             "drawdown_pct": 0.0,
             "cumulative_r": 0.0,
             "r_drawdown": 0.0
         })
 
-    cum_profit = 0.0
-    for td in trade_deals:
+    for ev_type, ev_ts, ev_payload in curve_events:
+        if ev_type == "cashflow":
+            cf_amt = float(ev_payload)
+            current_run_bal += cf_amt
+            if current_run_bal > peak_balance:
+                peak_balance = current_run_bal
+                peak_time = ev_ts
+            if not curves:
+                curves.append({
+                    "timestamp": ev_ts,
+                    "balance": round(current_run_bal, 2),
+                    "equity": round(current_run_bal, 2),
+                    "profit": round(cum_profit, 2),
+                    "growth_pct": round((twr_factor - 1.0) * 100.0, 2),
+                    "equity_growth_pct": round((equity_twr_factor - 1.0) * 100.0, 2),
+                    "drawdown_pct": 0.0,
+                    "cumulative_r": round(cum_r, 2),
+                    "r_drawdown": round(peak_r - cum_r, 2),
+                })
+            continue
+
+        td = ev_payload
+        dt_ev = datetime.fromtimestamp(ev_ts, tz=timezone.utc)
+        ym_key = (dt_ev.year, dt_ev.month)
+        if ym_key not in month_start_balances:
+            month_start_balances[ym_key] = max(1.0, current_run_bal)
+
         net_p = td["net_profit"]
         r_val = td["r_multiple"]
+        prev_bal = current_run_bal
         current_run_bal += net_p
         cum_profit += net_p
         cum_r += r_val
 
+        # True Time-Weighted Return compounding on trade returns only
+        if prev_bal > 0:
+            twr_factor *= max(1e-6, (prev_bal + net_p) / prev_bal)
+
+        # Intra-trade worst equity using MAE excursion (when available)
+        mae_dip = abs(float(td.get("mae_amount", 0.0) or 0.0))
+        intra_eq = min(current_run_bal, prev_bal - mae_dip) if mae_dip > 0 else current_run_bal
+        if prev_bal > 0:
+            equity_twr_factor = twr_factor * max(1e-6, intra_eq / max(1.0, current_run_bal)) if mae_dip > 0 else twr_factor
+
         if current_run_bal > peak_balance:
             peak_balance = current_run_bal
+            peak_time = ev_ts
+        else:
+            dur_dd = max(0, ev_ts - peak_time)
+            if dur_dd > max_dd_duration_sec:
+                max_dd_duration_sec = dur_dd
 
-        # Drawdown calculation
-        dd_amount = peak_balance - current_run_bal
+        # Drawdown calculation (incorporating intra-trade MAE dip if deeper than closed balance)
+        dd_amount = max(0.0, peak_balance - intra_eq)
         dd_pct = (dd_amount / peak_balance * 100.0) if peak_balance > 0 else 0.0
         if dd_pct > max_dd_pct:
             max_dd_pct = dd_pct
@@ -394,25 +511,22 @@ def process_portfolio_analytics(
         if dd_r > max_dd_r:
             max_dd_r = dd_r
 
-        # Growth calculation: Time-weighted return relative to net deposits
-        net_deposits = max(1.0, total_deposits - total_withdrawals)
-        growth_pct = (cum_profit / net_deposits) * 100.0
-
-        # Periodic change per trade (percentage and dollar)
-        prev_bal = max(1.0, current_run_bal - td["net_profit"])
-        trade_chg_pct = (td["net_profit"] / prev_bal) * 100.0
+        growth_pct = (twr_factor - 1.0) * 100.0
+        eq_growth_pct = (equity_twr_factor - 1.0) * 100.0
+        trade_chg_pct = (net_p / max(1.0, prev_bal)) * 100.0
 
         curves.append({
             "timestamp": td.get("time", 0),
             "balance": round(current_run_bal, 2),
-            "equity": round(current_run_bal, 2),
+            "equity": round(intra_eq, 2),
             "profit": round(cum_profit, 2),
             "growth_pct": round(growth_pct, 2),
+            "equity_growth_pct": round(eq_growth_pct, 2),
             "drawdown_pct": round(dd_pct, 2),
             "cumulative_r": round(cum_r, 2),
             "r_drawdown": round(dd_r, 2),
             "change_pct": round(trade_chg_pct, 2),
-            "change_amount": round(td["net_profit"], 2),
+            "change_amount": round(net_p, 2),
             "change_r": round(td["r_multiple"], 2)
         })
 
@@ -451,10 +565,13 @@ def process_portfolio_analytics(
     if r_multiples:
         r_array = np.array(r_multiples)
         avg_r = float(np.mean(r_array))
-        std_r = float(np.std(r_array, ddof=1)) if len(r_array) > 1 else 0.001
-        # Standardized Tharp SQN: multiplier capped at sqrt(100) = 10.0 for > 100 trades
-        multiplier = min(10.0, math.sqrt(len(r_array)))
-        sqn = float((avg_r / std_r) * multiplier) if std_r > 0 else 0.0
+        std_r = float(np.std(r_array, ddof=1)) if len(r_array) > 1 else 0.0
+        # Standardized Tharp SQN: multiplier capped at sqrt(100) = 10.0 for > 100 trades; requires N >= 2
+        if len(r_array) >= 2 and std_r > 1e-6:
+            multiplier = min(10.0, math.sqrt(len(r_array)))
+            sqn = float((avg_r / std_r) * multiplier)
+        else:
+            sqn = 0.0
         
         winning_r = [r for r in r_multiples if r > 0]
         losing_r = [r for r in r_multiples if r < 0]
@@ -471,29 +588,108 @@ def process_portfolio_analytics(
         best_trade_r = 0.0
         worst_trade_r = 0.0
 
+    # Consecutive Win/Loss Streaks & 1R Source Counts
+    max_consec_wins = 0
+    max_consec_losses = 0
+    cur_wins = 0
+    cur_losses = 0
+    sl_verified_count = 0
+    sl_estimated_count = 0
+    for td in trade_deals:
+        if td.get("risk_source") == "sl":
+            sl_verified_count += 1
+        else:
+            sl_estimated_count += 1
+        if td["net_profit"] > 0:
+            cur_wins += 1
+            cur_losses = 0
+            if cur_wins > max_consec_wins:
+                max_consec_wins = cur_wins
+        elif td["net_profit"] < 0:
+            cur_losses += 1
+            cur_wins = 0
+            if cur_losses > max_consec_losses:
+                max_consec_losses = cur_losses
+
     # Expectancy ($): (Win Rate * Avg Win) - (Loss Rate * Avg Loss)
     loss_rate = (lost_count / total_trades) if total_trades > 0 else 0.0
     expectancy = ((win_rate / 100.0) * avg_win) - (loss_rate * avg_loss)
 
-    # Sharpe Ratio from daily returns
-    if len(daily_returns) > 2:
-        vals = list(daily_returns.values())
-        day_pct_changes = [(vals[i] - vals[i-1]) / vals[i-1] for i in range(1, len(vals)) if vals[i-1] > 0]
-        if day_pct_changes and np.std(day_pct_changes) > 1e-6:
-            daily_mean = np.mean(day_pct_changes)
-            daily_std = np.std(day_pct_changes, ddof=1)
-            sharpe_ratio = float((daily_mean / daily_std) * math.sqrt(252))
-        else:
-            sharpe_ratio = 0.0
+    # Half-Kelly Criterion (% of bankroll per trade)
+    if total_trades > 0 and avg_loss > 0 and avg_win > 0:
+        w_prob = win_rate / 100.0
+        payoff_ratio = avg_win / avg_loss
+        kelly = w_prob - ((1.0 - w_prob) / payoff_ratio)
+        half_kelly_pct = round(max(0.0, kelly * 0.5 * 100.0), 2)
     else:
-        sharpe_ratio = 0.0
+        half_kelly_pct = 0.0
 
-    # Daily & Monthly Gain %
-    days_active = max(1, len(daily_returns))
-    total_gain_pct = (total_profit / max(1.0, total_deposits)) * 100.0
-    abs_gain_pct = total_gain_pct
-    daily_gain_pct = total_gain_pct / days_active if days_active > 0 else 0.0
+    # Sharpe & Sortino Ratios from daily returns (including 0%-return weekday trading days)
+    sharpe_ratio = 0.0
+    sortino_ratio = 0.0
+    if len(daily_returns) >= 2:
+        sorted_dates = sorted(daily_returns.keys())
+        start_dt = datetime.strptime(sorted_dates[0], "%Y-%m-%d").date()
+        end_dt = datetime.strptime(sorted_dates[-1], "%Y-%m-%d").date()
+        filled_vals = []
+        last_val = daily_returns[sorted_dates[0]]
+        cur_dt = start_dt
+        while cur_dt <= end_dt:
+            if cur_dt.weekday() < 5:  # Mon-Fri trading days
+                ds = cur_dt.strftime("%Y-%m-%d")
+                if ds in daily_returns:
+                    last_val = daily_returns[ds]
+                filled_vals.append(last_val)
+            cur_dt += timedelta(days=1)
+
+        day_pct_changes = [
+            (filled_vals[i] - filled_vals[i - 1]) / filled_vals[i - 1]
+            for i in range(1, len(filled_vals))
+            if filled_vals[i - 1] > 0
+        ]
+        if len(day_pct_changes) >= 2:
+            daily_mean = float(np.mean(day_pct_changes))
+            daily_std = float(np.std(day_pct_changes, ddof=1))
+            if daily_std > 1e-8:
+                sharpe_ratio = float((daily_mean / daily_std) * math.sqrt(252))
+            downside_diffs = [min(0.0, r) for r in day_pct_changes]
+            downside_dev = math.sqrt(float(np.mean([d * d for d in downside_diffs])))
+            if downside_dev > 1e-8:
+                sortino_ratio = float((daily_mean / downside_dev) * math.sqrt(252))
+
+    # True Time-Weighted Return (gain_pct) vs Absolute Gain (total_profit / total_deposits)
+    total_gain_pct = (twr_factor - 1.0) * 100.0
+    abs_gain_pct = (total_profit / max(1.0, total_deposits)) * 100.0 if total_deposits > 0 else total_gain_pct
+
+    # Calendar span days for realistic Daily & Monthly Gain %
+    if trade_deals:
+        first_ts = trade_deals[0].get("time", 0)
+        last_ts = trade_deals[-1].get("time", 0)
+        span_days = max(1.0, (last_ts - first_ts) / 86400.0)
+    else:
+        span_days = 1.0
+    daily_gain_pct = total_gain_pct / span_days
     monthly_gain_pct = daily_gain_pct * 30.4
+
+    # Recovery Factor & Calmar Ratio
+    recovery_factor = round(total_profit / max_dd_amount, 2) if max_dd_amount > 0 else 0.0
+    annualized_return_pct = (total_gain_pct / span_days) * 365.0 if span_days >= 1.0 else total_gain_pct
+    calmar_ratio = round(annualized_return_pct / max_dd_pct, 2) if max_dd_pct > 0 else 0.0
+    max_dd_duration_days = round(max_dd_duration_sec / 86400.0, 1)
+
+    # Today / This Week / This Month P&L Summary (UTC)
+    now_utc = datetime.now(tz=timezone.utc)
+    today_start_ts = int(datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc).timestamp())
+    week_start_dt = now_utc - timedelta(days=now_utc.weekday())
+    week_start_ts = int(datetime(week_start_dt.year, week_start_dt.month, week_start_dt.day, tzinfo=timezone.utc).timestamp())
+    month_start_ts = int(datetime(now_utc.year, now_utc.month, 1, tzinfo=timezone.utc).timestamp())
+
+    today_profit = sum(t["net_profit"] for t in trade_deals if t.get("time", 0) >= today_start_ts)
+    week_profit = sum(t["net_profit"] for t in trade_deals if t.get("time", 0) >= week_start_ts)
+    month_profit = sum(t["net_profit"] for t in trade_deals if t.get("time", 0) >= month_start_ts)
+    today_r = sum(t["r_multiple"] for t in trade_deals if t.get("time", 0) >= today_start_ts)
+    week_r = sum(t["r_multiple"] for t in trade_deals if t.get("time", 0) >= week_start_ts)
+    month_r = sum(t["r_multiple"] for t in trade_deals if t.get("time", 0) >= month_start_ts)
 
     # Monthly Performance Matrix (Year x Jan-Dec)
     monthly_data = {}
@@ -512,12 +708,16 @@ def process_portfolio_analytics(
     monthly_matrix = []
     for yr in years_set:
         row = {"year": yr, "months": {}, "total_profit": 0.0, "total_r": 0.0, "total_pct": 0.0}
+        yr_start_bal = None
         for mo in range(1, 13):
             if (yr, mo) in monthly_data:
                 m_info = monthly_data[(yr, mo)]
                 m_profit = m_info["profit"]
                 m_r = m_info["r"]
-                m_pct = (m_profit / max(1.0, current_run_bal)) * 100.0
+                m_base = month_start_balances.get((yr, mo), max(1.0, current_run_bal))
+                if yr_start_bal is None:
+                    yr_start_bal = m_base
+                m_pct = (m_profit / max(1.0, m_base)) * 100.0
                 row["months"][mo] = {
                     "profit": round(m_profit, 2),
                     "r": round(m_r, 2),
@@ -530,7 +730,7 @@ def process_portfolio_analytics(
                 row["months"][mo] = None
         row["total_profit"] = round(row["total_profit"], 2)
         row["total_r"] = round(row["total_r"], 2)
-        row["total_pct"] = round((row["total_profit"] / max(1.0, total_deposits)) * 100.0, 2)
+        row["total_pct"] = round((row["total_profit"] / max(1.0, yr_start_bal or total_deposits)) * 100.0, 2)
         monthly_matrix.append(row)
 
     # Detailed Monthly Analytics (for 4-Quadrant Monthly Analytics View)
@@ -558,7 +758,8 @@ def process_portfolio_analytics(
         m_tot_pips = sum(t.get("pips", 0.0) for t in m_trades)
         m_won = len([t for t in m_trades if t["net_profit"] > 0])
         m_lost = len([t for t in m_trades if t["net_profit"] < 0])
-        m_change_pct = (m_tot_profit / max(1.0, current_run_bal)) * 100.0
+        m_base = month_start_balances.get((yr, mo), max(1.0, current_run_bal))
+        m_change_pct = (m_tot_profit / max(1.0, m_base)) * 100.0
 
         curr_map = {}
         for t in m_trades:
@@ -1068,6 +1269,21 @@ def process_portfolio_analytics(
             "win_rate": round(win_rate, 2),
             "profit_factor": round(profit_factor, 2),
             "sharpe_ratio": round(sharpe_ratio, 2),
+            "sortino_ratio": round(sortino_ratio, 2),
+            "calmar_ratio": calmar_ratio,
+            "recovery_factor": recovery_factor,
+            "half_kelly_pct": half_kelly_pct,
+            "max_consecutive_wins": max_consec_wins,
+            "max_consecutive_losses": max_consec_losses,
+            "max_dd_duration_days": max_dd_duration_days,
+            "sl_verified_count": sl_verified_count,
+            "sl_estimated_count": sl_estimated_count,
+            "today_profit": round(today_profit, 2),
+            "week_profit": round(week_profit, 2),
+            "month_profit": round(month_profit, 2),
+            "today_r": round(today_r, 2),
+            "week_r": round(week_r, 2),
+            "month_r": round(month_r, 2),
             "expectancy": round(expectancy, 2),
             "avg_win": round(avg_win, 2),
             "avg_loss": round(avg_loss, 2),
@@ -1130,5 +1346,8 @@ def process_portfolio_analytics(
         "risk_of_ruin": risk_of_ruin,
         "r_distribution": r_distribution,
         "excursion_stats": excursion_stats,
+        "cashflows": cashflows[::-1],
+        "available_symbols": available_symbols,
+        "available_comments": available_comments,
         "closed_trades": trade_deals[::-1] # Reverse to display newest first
     }

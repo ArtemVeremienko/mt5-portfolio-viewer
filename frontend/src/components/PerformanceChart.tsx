@@ -283,12 +283,15 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       data = data.filter(d => d.timestamp >= yearStart);
     } else if (tf === '1Y') data = data.filter(d => d.timestamp >= now - 365 * 86400);
 
-    // Deduplicate data by timestamp (Lightweight charts requirement)
-    const uniqueMap = new Map<number, CurvePoint>();
-    for (const pt of data) {
-      uniqueMap.set(pt.timestamp, pt);
+    // Ensure strictly ascending timestamps for Lightweight Charts without dropping same-second trades
+    const rawSorted = [...data].sort((a, b) => a.timestamp - b.timestamp);
+    const sortedData: CurvePoint[] = [];
+    let lastTs = -Infinity;
+    for (const pt of rawSorted) {
+      const ts = pt.timestamp <= lastTs ? lastTs + 1 : pt.timestamp;
+      lastTs = ts;
+      sortedData.push(ts === pt.timestamp ? pt : { ...pt, timestamp: ts });
     }
-    const sortedData = Array.from(uniqueMap.values()).sort((a, b) => a.timestamp - b.timestamp);
     if (!sortedData.length) return;
 
     const tab = activeTab();
@@ -380,7 +383,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           priceScaleId: 'right',
           title: 'Equity Growth',
         });
-        equityGrowthSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.growth_pct })));
+        equityGrowthSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.equity_growth_pct ?? d.growth_pct })));
         seriesList.push(equityGrowthSeries);
       }
 

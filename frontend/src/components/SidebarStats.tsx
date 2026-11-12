@@ -83,38 +83,44 @@ export const SidebarStats: Component<SidebarStatsProps> = (props) => {
             </div>
           </>
         }>
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-slate-400 font-medium">Gain:</span>
+          <div class="flex items-center justify-between" title="Time-Weighted Return: compounded trading performance excluding deposits/withdrawals">
+            <span class="text-xs text-slate-400 font-medium flex items-center gap-1 cursor-help">
+              Gain (TWR): <Info size={11} class="text-slate-500" />
+            </span>
             <span class={`text-base font-bold ${ (s()?.gain_pct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400' }`}>
               {formatPct(s()?.gain_pct)}
             </span>
           </div>
 
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-slate-400 font-medium">Abs. Gain:</span>
+          <div class="flex items-center justify-between" title="Absolute Gain: total net profit divided by total deposits">
+            <span class="text-xs text-slate-400 font-medium flex items-center gap-1 cursor-help">
+              Abs. Gain: <Info size={11} class="text-slate-500" />
+            </span>
             <span class={`text-xs font-semibold ${ (s()?.abs_gain_pct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400' }`}>
               {formatPct(s()?.abs_gain_pct)}
             </span>
           </div>
 
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-slate-400 font-medium">Daily:</span>
+          <div class="flex items-center justify-between" title="Average daily return across total calendar days traded">
+            <span class="text-xs text-slate-400 font-medium">Avg Daily:</span>
             <span class={`text-xs font-semibold ${ (s()?.daily_gain_pct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400' }`}>
               {formatPct(s()?.daily_gain_pct)}
             </span>
           </div>
 
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-slate-400 font-medium">Monthly:</span>
+          <div class="flex items-center justify-between" title="Average monthly return extrapolated from daily average (30.4 days)">
+            <span class="text-xs text-slate-400 font-medium">Avg Monthly:</span>
             <span class={`text-xs font-semibold ${ (s()?.monthly_gain_pct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400' }`}>
               {formatPct(s()?.monthly_gain_pct)}
             </span>
           </div>
 
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-slate-400 font-medium">Drawdown:</span>
+          <div class="flex items-center justify-between" title="Maximum peak-to-trough drawdown including intra-trade MAE dips">
+            <span class="text-xs text-slate-400 font-medium flex items-center gap-1 cursor-help">
+              Drawdown: <Info size={11} class="text-slate-500" />
+            </span>
             <span class="text-xs font-semibold text-rose-400">
-              {s()?.max_drawdown_pct?.toFixed(2)}%
+              {s()?.max_drawdown_pct?.toFixed(2)}% <span class="text-slate-500 font-normal">(-${(s()?.max_drawdown_amount ?? 0).toFixed(2)})</span>
             </span>
           </div>
         </Show>
@@ -135,6 +141,18 @@ export const SidebarStats: Component<SidebarStatsProps> = (props) => {
               ({s()?.balance ? (((s()?.equity ?? 0) / (s()?.balance || 1)) * 100).toFixed(1) : 100}%)
             </span>
           </div>
+        </div>
+
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">Floating P&L:</span>
+          {(() => {
+            const fl = (s()?.equity ?? 0) - (s()?.balance ?? 0);
+            return (
+              <span class={`font-semibold ${fl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {fl >= 0 ? '+' : ''}{formatCurrency(fl)}
+              </span>
+            );
+          })()}
         </div>
 
         <div class="flex items-center justify-between">

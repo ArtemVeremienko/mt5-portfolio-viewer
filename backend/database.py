@@ -97,8 +97,21 @@ def init_db():
     )
     """)
     
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS trade_notes (
+        ticket INTEGER PRIMARY KEY,
+        account_id INTEGER,
+        note TEXT DEFAULT '',
+        setup_tag TEXT DEFAULT '',
+        mistake_tag TEXT DEFAULT '',
+        updated_at INTEGER DEFAULT 0,
+        FOREIGN KEY(account_id) REFERENCES accounts(login)
+    )
+    """)
+
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_acc_time ON deals(account_id, time)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_acc_time ON equity_snapshots(account_id, timestamp)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_acc ON trade_notes(account_id)")
     
     conn.commit()
     conn.close()
@@ -225,3 +238,48 @@ def get_snapshots_by_account(account_id: int) -> List[Dict[str, Any]]:
     rows = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return rows
+
+
+def append_snapshot(account_id: int, snapshot: Dict[str, Any]):
+    """Appends a single live equity snapshot for an account."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO equity_snapshots (account_id, timestamp, balance, equity, growth_pct, drawdown_pct, cumulative_r)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        account_id,
+        snapshot.get("timestamp", 0),
+        snapshot.get("balance", 0.0),
+        snapshot.get("equity", 0.0),
+        snapshot.get("growth_pct", 0.0),
+        snapshot.get("drawdown_pct", 0.0),
+        snapshot.get("cumulative_r", 0.0),
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_trade_notes(account_id: int) -> Dict[int, Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT ticket, note, setup_tag, mistake_tag, updated_at FROM trade_notes WHERE account_id = ?", (account_id,))
+    rows = {int(r["ticket"]): dict(r) for r in cursor.fetchall()}
+    conn.close()
+    return rows
+
+
+def upsert_trade_note(ticket: int, account_id: int, note: str, setup_tag: str = "", mistake_tag: str = "", updated_at: int = 0):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO trade_notes (ticket, account_id, note, setup_tag, mistake_tag, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(ticket) DO UPDATE SET
+        note = excluded.note,
+        setup_tag = excluded.setup_tag,
+        mistake_tag = excluded.mistake_tag,
+        updated_at = excluded.updated_at
+    """, (ticket, account_id, note, setup_tag, mistake_tag, updated_at))
+    conn.commit()
+    conn.close()

@@ -92,9 +92,16 @@ export const VanTharpPanel: Component<VanTharpPanelProps> = (props) => {
               </div>
             </Show>
           </div>
-          <p class="text-[11px] text-slate-400 mt-3">
-            Formula: <span class="font-mono text-purple-300">(R̄ / σR) × min(10, √N)</span>. Consistency across {s()?.total_trades || 0} trades.
-          </p>
+          <div class="text-[11px] text-slate-400 mt-3 space-y-1">
+            <p>
+              Formula: <span class="font-mono text-purple-300">(R̄ / σR) × min(10, √N)</span>. Consistency across {s()?.total_trades || 0} trades.
+            </p>
+            <Show when={(s()?.sl_verified_count ?? 0) + (s()?.sl_estimated_count ?? 0) > 0}>
+              <p class="text-[10px] text-slate-500">
+                1R Model: <span class="text-emerald-400 font-semibold">{s()?.sl_verified_count ?? 0} SL-Verified</span> • <span class="text-amber-400 font-semibold">{s()?.sl_estimated_count ?? 0} 1%-Estimated</span>
+              </p>
+            </Show>
+          </div>
         </div>
 
         {/* Card 2: Expectancy (R̄) */}

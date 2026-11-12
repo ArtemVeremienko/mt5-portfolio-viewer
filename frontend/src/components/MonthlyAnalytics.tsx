@@ -161,42 +161,51 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
               );
             }
 
-            const values = months.map(m => {
+            const rawValues = months.map(m => {
               switch (metric()) {
-                case 'change': return Math.abs(m.change_pct);
-                case 'profit': return Math.abs(m.profit);
+                case 'change': return m.change_pct;
+                case 'profit': return m.profit;
                 case 'lots': return m.lots;
-                case 'pips': return Math.abs(m.pips);
+                case 'pips': return m.pips;
               }
             });
-            const maxVal = Math.max(0.1, ...values);
+            const maxPos = Math.max(0.1, ...rawValues.map(v => Math.max(0, v)));
+            const maxNeg = Math.max(0, ...rawValues.map(v => Math.max(0, -v)));
+            const totalSpan = maxPos + maxNeg;
+            const plotTop = 30;
+            const plotHeight = 155;
+            const zeroY = maxNeg > 0 ? plotTop + (maxPos / totalSpan) * plotHeight : plotTop + plotHeight;
+            const gridLevels = maxNeg > 0
+              ? [maxPos, maxPos * 0.5, 0, -maxNeg * 0.5, -maxNeg]
+              : [0, maxPos * 0.33, maxPos * 0.66, maxPos];
 
             return (
               <div class="relative py-2">
-                <svg viewBox="0 0 500 240" class="w-full h-60 overflow-visible">
+                <svg viewBox="0 0 500 245" class="w-full h-60 overflow-visible">
                   {/* Grid Lines */}
-                  <For each={[0, 0.33, 0.66, 1.0]}>
-                    {(r) => {
-                      const y = 190 - (r * 150);
-                      const displayVal = r * maxVal;
+                  <For each={gridLevels}>
+                    {(displayVal) => {
+                      const y = displayVal >= 0
+                        ? zeroY - (displayVal / maxPos) * (zeroY - plotTop)
+                        : zeroY + (Math.abs(displayVal) / maxNeg) * (plotTop + plotHeight - zeroY);
                       return (
                         <g>
-                          <line x1="40" y1={y} x2="480" y2={y} stroke="#1e293b" stroke-width="1" stroke-dasharray="3 3" />
-                          <text x="32" y={y + 3} text-anchor="end" fill="#64748b" font-size="9" font-family="monospace">
-                            {metric() === 'change' ? `${displayVal.toFixed(1)}%` : (metric() === 'profit' ? `$${displayVal.toFixed(1)}` : displayVal.toFixed(1))}
+                          <line x1="45" y1={y} x2="480" y2={y} stroke="#1e293b" stroke-width="1" stroke-dasharray="3 3" />
+                          <text x="38" y={y + 3} text-anchor="end" fill="#64748b" font-size="9" font-family="monospace">
+                            {metric() === 'change' ? `${displayVal.toFixed(1)}%` : (metric() === 'profit' ? `$${displayVal.toFixed(0)}` : displayVal.toFixed(1))}
                           </text>
                         </g>
                       );
                     }}
                   </For>
-                  <line x1="40" y1="190" x2="480" y2="190" stroke="#334155" stroke-width="1.5" />
+                  <line x1="45" y1={zeroY} x2="480" y2={zeroY} stroke="#475569" stroke-width="1.5" />
 
                   {/* Monthly Bars */}
                   <For each={months}>
                     {(m, i) => {
                       const count = months.length;
                       const step = 420 / count;
-                      const barWidth = Math.min(65, Math.max(36, step * 0.55));
+                      const barWidth = Math.min(65, Math.max(28, step * 0.55));
                       const xCenter = 55 + (i() * step) + (step / 2);
                       const x = xCenter - (barWidth / 2);
 
@@ -209,12 +218,14 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
                         }
                       })();
 
-                      const barH = (Math.abs(val) / maxVal) * 150;
-                      const y = 190 - barH;
+                      const isNeg = val < 0;
+                      const barH = isNeg
+                        ? (Math.abs(val) / maxNeg) * (plotTop + plotHeight - zeroY)
+                        : (val / maxPos) * (zeroY - plotTop);
+                      const y = isNeg ? zeroY : zeroY - barH;
                       const isSelected = () => selectedMonth()?.month === m.month && selectedMonth()?.year === m.year;
                       
-                      // Colors matching Image 1: Mauve `#c084fc` / Soft Coral `#f472b6`
-                      const barColor = i() % 2 === 0 ? '#c084fc' : '#fb7185';
+                      const barColor = isNeg ? '#f43f5e' : (i() % 2 === 0 ? '#10b981' : '#34d399');
 
                       return (
                         <g
@@ -227,7 +238,7 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
                               x={x - 4}
                               y={y - 4}
                               width={barWidth + 8}
-                              height={barH + 4}
+                              height={barH + 8}
                               fill="none"
                               stroke="#60a5fa"
                               stroke-width="2"
@@ -241,18 +252,18 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
                             x={x}
                             y={y}
                             width={barWidth}
-                            height={barH}
+                            height={Math.max(1, barH)}
                             fill={barColor}
                             rx="3"
                             class={`transition-all ${isSelected() ? 'opacity-100 shadow-lg' : 'opacity-85 hover:opacity-100'}`}
                           />
 
-                          {/* Value on Top */}
+                          {/* Value Label */}
                           <text
                             x={xCenter}
-                            y={y - 6}
+                            y={isNeg ? y + barH + 11 : y - 6}
                             text-anchor="middle"
-                            fill="#ffffff"
+                            fill={isNeg ? '#fda4af' : '#ffffff'}
                             font-size="10"
                             font-family="monospace"
                             font-weight="bold"
@@ -260,8 +271,8 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
                             {formatMetricVal(m)}
                           </text>
 
-                          {/* Month Label (Rotated like in Image 1: 'Oct 2026') */}
-                          <g transform={`translate(${xCenter}, 205) rotate(-35)`}>
+                          {/* Month Label */}
+                          <g transform={`translate(${xCenter}, 212) rotate(-35)`}>
                             <text
                               x="0"
                               y="0"
@@ -301,33 +312,36 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
           }>
             {(() => {
               const currs = selectedMonth()?.currencies || [];
-              const maxRatio = Math.max(4.0, ...currs.map(c => c.reward_risk_ratio));
+              const maxRatio = Math.max(4, Math.ceil(Math.max(0, ...currs.map(c => c.reward_risk_ratio))));
+              const ticks = [0, 0.25, 0.5, 0.75, 1].map(r => +(r * maxRatio).toFixed(1));
+              const svgHeight = Math.max(240, 35 + currs.length * 46 + 40);
+              const axisY = svgHeight - 40;
 
               return (
                 <div class="relative py-2">
-                  <svg viewBox="0 0 500 240" class="w-full h-60 overflow-visible">
-                    {/* Vertical X-axis ticks (0, 1, 2, 3, 4) */}
-                    <For each={[0, 1, 2, 3, 4]}>
+                  <svg viewBox={`0 0 500 ${svgHeight}`} class="w-full overflow-visible" style={{ height: `${svgHeight}px` }}>
+                    {/* Vertical X-axis ticks */}
+                    <For each={ticks}>
                       {(tick) => {
-                        const x = 90 + ((tick / 4) * 360);
+                        const x = 90 + ((tick / maxRatio) * 360);
                         return (
                           <g>
-                            <line x1={x} y1="20" x2={x} y2="200" stroke="#1e293b" stroke-width="1" stroke-dasharray="3 3" />
-                            <text x={x} y="218" text-anchor="middle" fill="#64748b" font-size="10" font-family="monospace">
+                            <line x1={x} y1="20" x2={x} y2={axisY} stroke="#1e293b" stroke-width="1" stroke-dasharray="3 3" />
+                            <text x={x} y={axisY + 18} text-anchor="middle" fill="#64748b" font-size="10" font-family="monospace">
                               {tick}
                             </text>
                           </g>
                         );
                       }}
                     </For>
-                    <line x1="90" y1="200" x2="470" y2="200" stroke="#334155" stroke-width="1.5" />
+                    <line x1="90" y1={axisY} x2="470" y2={axisY} stroke="#334155" stroke-width="1.5" />
 
                     {/* Horizontal Bars by Currency */}
                     <For each={currs}>
                       {(c, i) => {
-                        const barHeight = 36;
-                        const y = 35 + (i() * 65);
-                        const barW = Math.min(360, (c.reward_risk_ratio / 4.0) * 360);
+                        const barHeight = 30;
+                        const y = 25 + (i() * 46);
+                        const barW = Math.min(360, (c.reward_risk_ratio / maxRatio) * 360);
 
                         return (
                           <g class="group">
@@ -499,11 +513,13 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
             {(() => {
               const currs = selectedMonth()?.currencies || [];
               const maxMinutes = Math.max(16.67, ...currs.map(c => (c.avg_long_duration_sec + c.avg_short_duration_sec) / 60));
+              const svgHeight = Math.max(240, 35 + currs.length * 46 + 55);
+              const axisY = svgHeight - 55;
 
               return (
                 <div class="relative py-2">
-                  <svg viewBox="0 0 500 240" class="w-full h-60 overflow-visible">
-                    {/* Time scale ticks matching Image 2: 0sec, 3.33min, 6.67min, 10min, 13.33min, 16.67min */}
+                  <svg viewBox={`0 0 500 ${svgHeight}`} class="w-full overflow-visible" style={{ height: `${svgHeight}px` }}>
+                    {/* Time scale ticks */}
                     <For each={[0, 0.2, 0.4, 0.6, 0.8, 1.0]}>
                       {(ratio) => {
                         const x = 90 + (ratio * 360);
@@ -511,21 +527,21 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
                         const label = mins === 0 ? '0sec' : `${mins.toFixed(2)}min`;
                         return (
                           <g>
-                            <line x1={x} y1="20" x2={x} y2="180" stroke="#1e293b" stroke-width="1" stroke-dasharray="3 3" />
-                            <text x={x} y="196" text-anchor="middle" fill="#64748b" font-size="9" font-family="monospace">
+                            <line x1={x} y1="20" x2={x} y2={axisY} stroke="#1e293b" stroke-width="1" stroke-dasharray="3 3" />
+                            <text x={x} y={axisY + 16} text-anchor="middle" fill="#64748b" font-size="9" font-family="monospace">
                               {label}
                             </text>
                           </g>
                         );
                       }}
                     </For>
-                    <line x1="90" y1="180" x2="470" y2="180" stroke="#334155" stroke-width="1.5" />
+                    <line x1="90" y1={axisY} x2="470" y2={axisY} stroke="#334155" stroke-width="1.5" />
 
                     {/* Stacked Horizontal Bars by Currency */}
                     <For each={currs}>
                       {(c, i) => {
-                        const barHeight = 32;
-                        const y = 35 + (i() * 60);
+                        const barHeight = 28;
+                        const y = 25 + (i() * 46);
 
                         const longMinutes = c.avg_long_duration_sec / 60;
                         const shortMinutes = c.avg_short_duration_sec / 60;

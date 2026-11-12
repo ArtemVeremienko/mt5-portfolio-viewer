@@ -44,6 +44,21 @@ export interface PortfolioStats {
   win_rate: number;
   profit_factor: number;
   sharpe_ratio: number;
+  sortino_ratio?: number;
+  calmar_ratio?: number;
+  recovery_factor?: number;
+  half_kelly_pct?: number;
+  max_consecutive_wins?: number;
+  max_consecutive_losses?: number;
+  max_dd_duration_days?: number;
+  sl_verified_count?: number;
+  sl_estimated_count?: number;
+  today_profit?: number;
+  week_profit?: number;
+  month_profit?: number;
+  today_r?: number;
+  week_r?: number;
+  month_r?: number;
   expectancy: number;
   avg_win: number;
   avg_loss: number;
@@ -101,6 +116,7 @@ export interface CurvePoint {
   equity: number;
   profit: number;
   growth_pct: number;
+  equity_growth_pct?: number;
   drawdown_pct: number;
   cumulative_r: number;
   r_drawdown: number;
@@ -262,6 +278,7 @@ export interface TradeDeal {
   order_id: number;
   account_id: number;
   time: number;
+  open_time?: number;
   type: number; // 0=BUY, 1=SELL
   symbol: string;
   volume: number;
@@ -284,6 +301,9 @@ export interface TradeDeal {
   mfe_r?: number;
   risk_source?: 'sl' | 'balance_pct';
   sl_diff_pts?: number;
+  note?: string;
+  setup_tag?: string;
+  mistake_tag?: string;
 }
 
 export interface ExcursionTrade {
@@ -332,6 +352,15 @@ export interface OpenPosition {
   comment: string;
 }
 
+export interface CashflowItem {
+  ticket: number;
+  time: number;
+  amount: number;
+  type: 'Deposit' | 'Withdrawal';
+  comment: string;
+  balance_after: number;
+}
+
 export interface PortfolioData {
   account: AccountInfo;
   stats: PortfolioStats;
@@ -347,5 +376,8 @@ export interface PortfolioData {
   risk_of_ruin?: RiskOfRuinItem[];
   r_distribution: RDistributionBucket[];
   excursion_stats: ExcursionStats;
+  cashflows?: CashflowItem[];
+  available_symbols?: string[];
+  available_comments?: string[];
   closed_trades: TradeDeal[];
 }

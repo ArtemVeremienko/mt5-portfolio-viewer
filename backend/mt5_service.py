@@ -146,7 +146,9 @@ class MT5Service:
                 print(f"[MT5Service] Error fetching M1 excursion rates for {symbol}: {e}")
 
         # Fallback or synthetic excursion if M1 rates are unavailable
+        is_synthetic = False
         if mae_price <= 0.0 and mfe_price <= 0.0:
+            is_synthetic = True
             price_move = abs(close_price - open_price)
             if net_profit > 0:
                 # Winning trade: moderate MAE, MFE exceeds close price
@@ -421,9 +423,9 @@ class MT5Service:
         sim_login = 12289277
         return {
             "login": sim_login,
-            "broker": "IC Markets (Live)",
-            "name": "Prime-Net Quantitative Portfolio",
-            "server": "ICMarketsSC-Live02",
+            "broker": "Simulated Demo (Offline)",
+            "name": "Sample Quantitative Portfolio",
+            "server": "Simulation-Offline",
             "currency": "USD",
             "leverage": 500,
             "balance": 24850.75,
@@ -431,7 +433,7 @@ class MT5Service:
             "margin": 612.30,
             "free_margin": 24508.10,
             "margin_level": 4102.63,
-            "is_demo": 0,
+            "is_demo": 1,
             "last_synced_at": int(time.time()),
             "is_simulation": True
         }

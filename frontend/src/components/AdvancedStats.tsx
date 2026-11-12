@@ -356,11 +356,38 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 <span class="font-bold text-slate-200 font-mono">{s()?.ahpr_pct?.toFixed(2) || '0.00'}%</span>
               </div>
 
-              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg hover:bg-slate-800/30 transition-colors">
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title="Geometric Holding Period Return per trade">
                   GHPR:
                 </span>
                 <span class="font-bold text-slate-200 font-mono">{s()?.ghpr_pct?.toFixed(2) || '0.00'}%</span>
+              </div>
+
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title="Downside-risk-adjusted annualized return (penalizes only negative days)">
+                  Sortino / Calmar:
+                </span>
+                <span class="font-bold text-slate-200 font-mono">
+                  {s()?.sortino_ratio?.toFixed(2) || '0.00'} / {s()?.calmar_ratio?.toFixed(2) || '0.00'}
+                </span>
+              </div>
+
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title="Net Profit divided by Max Drawdown ($), and Half-Kelly optimal risk %">
+                  Recovery / Half-Kelly:
+                </span>
+                <span class="font-bold text-slate-200 font-mono">
+                  {s()?.recovery_factor?.toFixed(2) || '0.00'}x / {s()?.half_kelly_pct?.toFixed(1) || '0.0'}%
+                </span>
+              </div>
+
+              <div class="flex justify-between items-center py-2 px-2.5 rounded-lg hover:bg-slate-800/30 transition-colors">
+                <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title="Longest consecutive win/loss streak and longest drawdown duration in days">
+                  Streaks (W/L) / Max DD Dur.:
+                </span>
+                <span class="font-bold text-slate-200 font-mono">
+                  {s()?.max_consecutive_wins ?? 0}W / {s()?.max_consecutive_losses ?? 0}L ({s()?.max_dd_duration_days?.toFixed(1) ?? '0.0'}d)
+                </span>
               </div>
             </div>
 
@@ -509,6 +536,42 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                 Net Profit ($)
               </button>
             </div>
+          </div>
+
+          {/* Trading Sessions Breakdown (Tokyo / London / New York) */}
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <For each={[
+              { name: 'Tokyo / Asia', window: '00:00–08:59 UTC', hours: [0,1,2,3,4,5,6,7,8] },
+              { name: 'London', window: '07:00–15:59 UTC', hours: [7,8,9,10,11,12,13,14,15] },
+              { name: 'New York', window: '12:00–20:59 UTC', hours: [12,13,14,15,16,17,18,19,20] },
+            ]}>
+              {(sess) => {
+                const stats = () => {
+                  const rows = (props.hourly || []).filter(h => sess.hours.includes(h.hour));
+                  const trades = rows.reduce((a, b) => a + b.trades, 0);
+                  const won = rows.reduce((a, b) => a + b.won, 0);
+                  const profit = rows.reduce((a, b) => a + b.profit, 0);
+                  const r = rows.reduce((a, b) => a + b.r, 0);
+                  const wr = trades > 0 ? (won / trades) * 100 : 0;
+                  return { trades, wr, profit, r };
+                };
+                return (
+                  <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs">
+                    <div>
+                      <div class="font-bold text-slate-200">{sess.name}</div>
+                      <div class="text-[10px] text-slate-500 font-mono">{sess.window}</div>
+                      <div class="text-[10px] text-slate-400 mt-1">{stats().trades} trades • {stats().wr.toFixed(0)}% WR</div>
+                    </div>
+                    <div class="text-right font-mono">
+                      <div class={`font-bold ${stats().profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {stats().profit >= 0 ? '+$' : '-$'}{Math.abs(stats().profit).toFixed(2)}
+                      </div>
+                      <div class="text-[10px] text-purple-300">{stats().r >= 0 ? '+' : ''}{stats().r.toFixed(2)}R</div>
+                    </div>
+                  </div>
+                );
+              }}
+            </For>
           </div>
 
           {/* SVG Stacked Bar Chart */}

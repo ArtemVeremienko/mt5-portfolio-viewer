@@ -7,6 +7,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPExceptio
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from backend.database import (
     init_db,
@@ -15,7 +16,10 @@ from backend.database import (
     get_account_by_login,
     upsert_deals,
     get_deals_by_account,
-    save_snapshots
+    save_snapshots,
+    append_snapshot,
+    get_trade_notes,
+    upsert_trade_note,
 )
 from backend.mt5_service import mt5_service
 from backend.analytics import process_portfolio_analytics
@@ -31,10 +35,17 @@ connected_clients: List[WebSocket] = []
 def perform_sync(account_login: Optional[int] = None):
     """Syncs data from MT5 or simulation into database."""
     global CURRENT_ACTIVE_LOGIN
+    if not mt5_service.is_connected():
+        existing = get_all_accounts()
+        if existing:
+            if CURRENT_ACTIVE_LOGIN is None:
+                CURRENT_ACTIVE_LOGIN = existing[0]["login"]
+            return
+
     acc_info = mt5_service.get_account_info()
     if not acc_info:
         return
-    
+
     upsert_account(acc_info)
     login = acc_info["login"]
     if CURRENT_ACTIVE_LOGIN is None:
@@ -65,8 +76,24 @@ app.add_middleware(
 
 async def background_live_broadcaster():
     """Periodically broadcasts live equity and open trades to WebSockets."""
+    last_snapshot_ts = 0
     while True:
         try:
+            now_ts = int(time.time())
+            is_conn = mt5_service.is_connected()
+            if is_conn and (now_ts - last_snapshot_ts >= 60):
+                acc_snap = mt5_service.get_account_info()
+                if acc_snap:
+                    append_snapshot(acc_snap["login"], {
+                        "timestamp": now_ts,
+                        "balance": acc_snap["balance"],
+                        "equity": acc_snap["equity"],
+                        "growth_pct": 0.0,
+                        "drawdown_pct": 0.0,
+                        "cumulative_r": 0.0,
+                    })
+                    last_snapshot_ts = now_ts
+
             if connected_clients:
                 acc_info = mt5_service.get_account_info()
                 open_pos = mt5_service.get_open_positions()
@@ -79,10 +106,10 @@ async def background_live_broadcaster():
                             "equity": acc_info["equity"],
                             "margin": acc_info["margin"],
                             "free_margin": acc_info["free_margin"],
-                            "is_connected": mt5_service.is_connected()
+                            "is_connected": is_conn
                         },
                         "open_positions": open_pos,
-                        "timestamp": int(time.time())
+                        "timestamp": now_ts
                     }
                     message = json.dumps(payload)
                     for client in list(connected_clients):
@@ -123,29 +150,83 @@ def trigger_sync():
         "is_mt5_connected": mt5_service.is_connected()
     }
 
+class TradeNotePayload(BaseModel):
+    ticket: int
+    account_id: int
+    note: str = ""
+    setup_tag: str = ""
+    mistake_tag: str = ""
+
+
+@app.post("/api/trades/note")
+def save_trade_note(payload: TradeNotePayload):
+    upsert_trade_note(
+        ticket=payload.ticket,
+        account_id=payload.account_id,
+        note=payload.note,
+        setup_tag=payload.setup_tag,
+        mistake_tag=payload.mistake_tag,
+        updated_at=int(time.time()),
+    )
+    return {"status": "ok", "ticket": payload.ticket}
+
+
 @app.get("/api/portfolio")
 def get_portfolio(
     start_time: Optional[int] = Query(None),
     end_time: Optional[int] = Query(None),
     risk_pct: Optional[float] = Query(0.01),
-    scope: Optional[str] = Query("all")
+    scope: Optional[str] = Query("all"),
+    symbol: Optional[str] = Query(None),
+    direction: Optional[str] = Query(None),
+    comment: Optional[str] = Query(None),
+    all_accounts: Optional[bool] = Query(False),
 ):
     global CURRENT_ACTIVE_LOGIN
     if CURRENT_ACTIVE_LOGIN is None:
         perform_sync()
 
-    acc = get_account_by_login(CURRENT_ACTIVE_LOGIN) if CURRENT_ACTIVE_LOGIN else None
-    if not acc:
-        acc = mt5_service.get_account_info() or {
-            "login": 0, "broker": "Unknown", "name": "No Account", "balance": 0.0, "equity": 0.0
+    notes_map: dict = {}
+    if all_accounts:
+        accounts = get_all_accounts()
+        deals = []
+        total_bal = 0.0
+        total_eq = 0.0
+        total_margin = 0.0
+        total_free = 0.0
+        for a in accounts:
+            total_bal += float(a.get("balance", 0.0) or 0.0)
+            total_eq += float(a.get("equity", 0.0) or 0.0)
+            total_margin += float(a.get("margin", 0.0) or 0.0)
+            total_free += float(a.get("free_margin", 0.0) or 0.0)
+            deals.extend(get_deals_by_account(a["login"]))
+            notes_map.update(get_trade_notes(a["login"]))
+        acc = {
+            "login": 0,
+            "broker": "Combined Portfolio",
+            "name": f"All Accounts ({len(accounts)})",
+            "currency": accounts[0].get("currency", "USD") if accounts else "USD",
+            "leverage": accounts[0].get("leverage", 100) if accounts else 100,
+            "balance": round(total_bal, 2),
+            "equity": round(total_eq, 2),
+            "margin": round(total_margin, 2),
+            "free_margin": round(total_free, 2),
+            "is_demo": 0,
         }
+    else:
+        acc = get_account_by_login(CURRENT_ACTIVE_LOGIN) if CURRENT_ACTIVE_LOGIN else None
+        if not acc:
+            acc = mt5_service.get_account_info() or {
+                "login": 0, "broker": "Unknown", "name": "No Account", "balance": 0.0, "equity": 0.0
+            }
 
-    deals = get_deals_by_account(acc.get("login", 0))
-    if not deals:
-        # Fetch directly if db is empty
-        deals = mt5_service.get_history_deals()
-        if deals:
-            upsert_deals(deals)
+        deals = get_deals_by_account(acc.get("login", 0))
+        if not deals:
+            # Fetch directly if db is empty
+            deals = mt5_service.get_history_deals()
+            if deals:
+                upsert_deals(deals)
+        notes_map = get_trade_notes(acc.get("login", 0))
 
     analytics_result = process_portfolio_analytics(
         deals=deals,
@@ -153,12 +234,27 @@ def get_portfolio(
         start_time=start_time,
         end_time=end_time,
         default_risk_pct=risk_pct or 0.01,
-        trade_scope=scope or "all"
+        trade_scope=scope or "all",
+        symbol=symbol,
+        direction=direction,
+        comment=comment,
     )
+    for t in analytics_result.get("closed_trades", []):
+        n = notes_map.get(int(t.get("ticket", 0)))
+        if n:
+            t["note"] = n.get("note", "")
+            t["setup_tag"] = n.get("setup_tag", "")
+            t["mistake_tag"] = n.get("mistake_tag", "")
     return analytics_result
 
 @app.get("/api/trades/open")
 def get_open_trades():
+    acc_info = mt5_service.get_account_info()
+    if acc_info and CURRENT_ACTIVE_LOGIN is not None and acc_info.get("login") != CURRENT_ACTIVE_LOGIN:
+        return {
+            "positions": [],
+            "is_mt5_connected": mt5_service.is_connected()
+        }
     return {
         "positions": mt5_service.get_open_positions(),
         "is_mt5_connected": mt5_service.is_connected()

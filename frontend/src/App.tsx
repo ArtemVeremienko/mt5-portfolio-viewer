@@ -41,6 +41,14 @@ export const App: Component = () => {
   const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'excursions' | 'calendar' | 'advanced' | 'trades'>('overview');
   const [calendarSubTab, setCalendarSubTab] = createSignal<'monthly' | 'daily'>('monthly');
 
+  // Custom Analysis Global Filters
+  const [filterStartDate, setFilterStartDate] = createSignal<string>('');
+  const [filterEndDate, setFilterEndDate] = createSignal<string>('');
+  const [filterSymbol, setFilterSymbol] = createSignal<string>('');
+  const [filterDirection, setFilterDirection] = createSignal<string>('');
+  const [filterComment, setFilterComment] = createSignal<string>('');
+  const [allAccountsMode, setAllAccountsMode] = createSignal<boolean>(false);
+
   let ws: WebSocket | null = null;
   let wsReconnectTimer: any = null;
 
@@ -60,9 +68,24 @@ export const App: Component = () => {
 
   const fetchPortfolio = async (overrideScope?: TradeScope) => {
     try {
+      const params = new URLSearchParams();
       const scopeVal = overrideScope || tradeScope();
-      const scopeParam = scopeVal === 'last100' ? '?scope=last100' : '';
-      const res = await fetch(`/api/portfolio${scopeParam}`);
+      if (scopeVal === 'last100') params.set('scope', 'last100');
+      if (filterStartDate()) {
+        const ts = Math.floor(new Date(filterStartDate() + 'T00:00:00Z').getTime() / 1000);
+        if (!isNaN(ts)) params.set('start_time', String(ts));
+      }
+      if (filterEndDate()) {
+        const ts = Math.floor(new Date(filterEndDate() + 'T23:59:59Z').getTime() / 1000);
+        if (!isNaN(ts)) params.set('end_time', String(ts));
+      }
+      if (filterSymbol()) params.set('symbol', filterSymbol());
+      if (filterDirection()) params.set('direction', filterDirection());
+      if (filterComment()) params.set('comment', filterComment());
+      if (allAccountsMode()) params.set('all_accounts', 'true');
+
+      const qs = params.toString();
+      const res = await fetch(`/api/portfolio${qs ? '?' + qs : ''}`);
       if (res.ok) {
         const data: PortfolioData = await res.json();
         setPortfolioData(data);
@@ -70,6 +93,20 @@ export const App: Component = () => {
     } catch (e) {
       console.error('Failed to fetch portfolio data:', e);
     }
+  };
+
+  const hasActiveFilters = () =>
+    Boolean(filterStartDate() || filterEndDate() || filterSymbol() || filterDirection() || filterComment() || allAccountsMode() || tradeScope() === 'last100');
+
+  const clearAllFilters = () => {
+    setFilterStartDate('');
+    setFilterEndDate('');
+    setFilterSymbol('');
+    setFilterDirection('');
+    setFilterComment('');
+    setAllAccountsMode(false);
+    setTradeScope('all');
+    fetchPortfolio('all');
   };
 
   const fetchOpenTrades = async () => {
@@ -125,11 +162,16 @@ export const App: Component = () => {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'live_update') {
-            if (msg.open_positions) {
-              setOpenTrades(msg.open_positions);
-            }
             if (msg.account) {
               setIsMt5Connected(msg.account.is_connected);
+              const currentLogin = activeLogin();
+              // Only apply live terminal ticks to the currently matching account
+              if (currentLogin !== null && msg.account.login !== currentLogin) {
+                return;
+              }
+              if (msg.open_positions) {
+                setOpenTrades(msg.open_positions);
+              }
               // Update live equity and balance seamlessly
               setPortfolioData((prev) => {
                 if (!prev) return prev;
@@ -296,8 +338,144 @@ export const App: Component = () => {
             </button>
           </div>
 
+          {/* Custom Analysis Global Filter Bar */}
+          <div class="flex flex-wrap items-center gap-2 bg-slate-900/70 border border-slate-800/90 rounded-2xl px-3.5 py-2.5 text-xs">
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mr-1">Filters:</span>
+            <input
+              type="date"
+              value={filterStartDate()}
+              onChange={(e) => { setFilterStartDate(e.currentTarget.value); fetchPortfolio(); }}
+              title="Start Date (UTC)"
+              class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-blue-500"
+            />
+            <span class="text-slate-600">→</span>
+            <input
+              type="date"
+              value={filterEndDate()}
+              onChange={(e) => { setFilterEndDate(e.currentTarget.value); fetchPortfolio(); }}
+              title="End Date (UTC)"
+              class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-blue-500"
+            />
+
+            <select
+              value={filterSymbol()}
+              onChange={(e) => { setFilterSymbol(e.currentTarget.value); fetchPortfolio(); }}
+              class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-blue-500"
+            >
+              <option value="">All Symbols</option>
+              {(portfolioData()?.available_symbols || []).map(sym => (
+                <option value={sym}>{sym}</option>
+              ))}
+            </select>
+
+            <select
+              value={filterDirection()}
+              onChange={(e) => { setFilterDirection(e.currentTarget.value); fetchPortfolio(); }}
+              class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-blue-500"
+            >
+              <option value="">All Directions</option>
+              <option value="BUY">BUY Only</option>
+              <option value="SELL">SELL Only</option>
+            </select>
+
+            <select
+              value={filterComment()}
+              onChange={(e) => { setFilterComment(e.currentTarget.value); fetchPortfolio(); }}
+              class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 max-w-[140px] focus:outline-none focus:border-blue-500"
+            >
+              <option value="">All Strategies / EA</option>
+              {(portfolioData()?.available_comments || []).map(c => (
+                <option value={c}>{c}</option>
+              ))}
+            </select>
+
+            <Show when={accounts().length > 1}>
+              <button
+                onClick={() => { setAllAccountsMode(!allAccountsMode()); fetchPortfolio(); }}
+                class={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+                  allAccountsMode()
+                    ? 'bg-indigo-600 text-white border-indigo-500'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                }`}
+                title="Combine all synced accounts into one portfolio"
+              >
+                All Accounts ({accounts().length})
+              </button>
+            </Show>
+
+            <Show when={tradeScope() === 'last100'}>
+              <span class="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-bold">
+                Scope: Last 100
+              </span>
+            </Show>
+
+            <Show when={hasActiveFilters()}>
+              <button
+                onClick={clearAllFilters}
+                class="ml-auto px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[11px] font-semibold transition-colors"
+              >
+                Reset
+              </button>
+            </Show>
+          </div>
+
           {/* Tab 1: Overview & Interactive Curves */}
           <Show when={mainTab() === 'overview'}>
+            {/* At-a-Glance Trader Strip */}
+            {(() => {
+              const st = portfolioData()?.stats;
+              const bal = st?.balance || 0;
+              const eq = st?.equity || bal;
+              const fl = eq - bal;
+              const todayP = st?.today_profit ?? 0;
+              const weekP = st?.week_profit ?? 0;
+              const monthP = st?.month_profit ?? 0;
+              const dailyPct = bal > 0 ? (todayP / bal) * 100 : 0;
+              return (
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  <div class="bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5">
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Today (UTC)</div>
+                    <div class={`text-sm font-bold font-mono mt-0.5 ${todayP >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {todayP >= 0 ? '+$' : '-$'}{Math.abs(todayP).toFixed(2)}
+                    </div>
+                    <div class="text-[10px] text-slate-500 font-mono">{(st?.today_r ?? 0) >= 0 ? '+' : ''}{(st?.today_r ?? 0).toFixed(2)}R • {dailyPct >= 0 ? '+' : ''}{dailyPct.toFixed(2)}%</div>
+                  </div>
+                  <div class="bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5">
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">This Week</div>
+                    <div class={`text-sm font-bold font-mono mt-0.5 ${weekP >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {weekP >= 0 ? '+$' : '-$'}{Math.abs(weekP).toFixed(2)}
+                    </div>
+                    <div class="text-[10px] text-slate-500 font-mono">{(st?.week_r ?? 0) >= 0 ? '+' : ''}{(st?.week_r ?? 0).toFixed(2)}R</div>
+                  </div>
+                  <div class="bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5">
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">This Month</div>
+                    <div class={`text-sm font-bold font-mono mt-0.5 ${monthP >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {monthP >= 0 ? '+$' : '-$'}{Math.abs(monthP).toFixed(2)}
+                    </div>
+                    <div class="text-[10px] text-slate-500 font-mono">{(st?.month_r ?? 0) >= 0 ? '+' : ''}{(st?.month_r ?? 0).toFixed(2)}R</div>
+                  </div>
+                  <button
+                    onClick={() => setMainTab('trades')}
+                    class="text-left bg-slate-900/90 border border-slate-800 hover:border-blue-500/40 rounded-xl px-3.5 py-2.5 transition-colors"
+                  >
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Floating P&L</div>
+                    <div class={`text-sm font-bold font-mono mt-0.5 ${fl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {fl >= 0 ? '+$' : '-$'}{Math.abs(fl).toFixed(2)}
+                    </div>
+                    <div class="text-[10px] text-blue-400 font-medium">{openTrades().length} Open Position{openTrades().length === 1 ? '' : 's'} →</div>
+                  </button>
+                  <div class="bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5 col-span-2 sm:col-span-1">
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Prop Risk Guard</div>
+                    <div class="text-xs font-bold text-slate-200 font-mono mt-1">
+                      Daily: <span class={dailyPct <= -4 ? 'text-rose-400' : 'text-emerald-400'}>{dailyPct.toFixed(2)}%</span> <span class="text-slate-500">/ -5%</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 font-mono">
+                      Max DD: <span class={(st?.max_drawdown_pct ?? 0) >= 8 ? 'text-rose-400' : 'text-amber-300'}>{(st?.max_drawdown_pct ?? 0).toFixed(2)}%</span> / 10%
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             <PerformanceChart
               curves={portfolioData()?.curves || []}
               mode={metricMode()}
@@ -405,6 +583,7 @@ export const App: Component = () => {
             <TradesTable
               openTrades={openTrades()}
               closedTrades={portfolioData()?.closed_trades || []}
+              cashflows={portfolioData()?.cashflows || []}
               mode={metricMode()}
               tradeScope={tradeScope()}
               availableTrades={portfolioData()?.stats?.available_closed_trades || portfolioData()?.stats?.total_trades || 0}
@@ -412,6 +591,7 @@ export const App: Component = () => {
                 setTradeScope(scope);
                 fetchPortfolio(scope);
               }}
+              onNoteSaved={() => fetchPortfolio()}
             />
           </Show>
 
