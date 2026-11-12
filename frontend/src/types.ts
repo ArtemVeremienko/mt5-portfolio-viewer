@@ -217,6 +217,40 @@ export interface RiskOfRuinItem {
   consecutive_losses: number;
 }
 
+export interface MonthlyCurrency {
+  symbol: string;
+  trades: number;
+  popularity_pct: number;
+  reward_risk_ratio: number;
+  is_all_wins: boolean;
+  avg_long_duration_sec: number;
+  avg_long_duration_str: string;
+  avg_short_duration_sec: number;
+  avg_short_duration_str: string;
+  avg_total_duration_sec: number;
+  avg_total_duration_str: string;
+  long_trades: number;
+  short_trades: number;
+  profit: number;
+  pips: number;
+  lots: number;
+}
+
+export interface MonthlyAnalyticsItem {
+  year: number;
+  month: number;
+  month_name: string;
+  short_name: string;
+  change_pct: number;
+  profit: number;
+  lots: number;
+  pips: number;
+  trades: number;
+  won: number;
+  lost: number;
+  currencies: MonthlyCurrency[];
+}
+
 export interface RDistributionBucket {
   bucket: string;
   count: number;
@@ -301,6 +335,7 @@ export interface PortfolioData {
   stats: PortfolioStats;
   curves: CurvePoint[];
   monthly_matrix: MonthlyRow[];
+  monthly_analytics?: MonthlyAnalyticsItem[];
   symbol_stats: SymbolStat[];
   hourly_stats: HourlyStat[];
   day_of_week_stats: DayOfWeekStat[];

@@ -16,6 +16,7 @@ import { TradesTable } from './components/TradesTable';
 import { ExcursionPanel } from './components/ExcursionPanel';
 import { CalendarView } from './components/CalendarView';
 import { AdvancedStats } from './components/AdvancedStats';
+import { MonthlyAnalytics } from './components/MonthlyAnalytics';
 import { 
   LineChart, 
   Award, 
@@ -23,7 +24,8 @@ import {
   PieChart,
   Activity,
   Calendar as CalendarIcon,
-  BarChart3
+  BarChart3,
+  CalendarDays
 } from 'lucide-solid';
 
 export const App: Component = () => {
@@ -36,7 +38,7 @@ export const App: Component = () => {
   const [isMt5Connected, setIsMt5Connected] = createSignal<boolean>(false);
   const [isWsConnected, setIsWsConnected] = createSignal<boolean>(false);
   const [isSyncing, setIsSyncing] = createSignal<boolean>(false);
-  const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'excursions' | 'calendar' | 'advanced' | 'trades'>('overview');
+  const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'excursions' | 'calendar' | 'monthly' | 'advanced' | 'trades'>('overview');
 
   let ws: WebSocket | null = null;
   let wsReconnectTimer: any = null;
@@ -279,6 +281,18 @@ export const App: Component = () => {
 
             <button
               class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                mainTab() === 'monthly'
+                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-600/30'
+                  : 'text-purple-400 hover:text-purple-200 hover:bg-purple-950/30'
+              }`}
+              onClick={() => setMainTab('monthly')}
+            >
+              <CalendarDays size={15} />
+              <span>Monthly Analytics</span>
+            </button>
+
+            <button
+              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 mainTab() === 'advanced'
                   ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-blue-400 hover:text-blue-200 hover:bg-blue-950/30'
@@ -349,6 +363,14 @@ export const App: Component = () => {
           <Show when={mainTab() === 'calendar'}>
             <CalendarView
               days={portfolioData()?.calendar_days || []}
+              mode={metricMode()}
+            />
+          </Show>
+
+          {/* Tab: Monthly Analytics */}
+          <Show when={mainTab() === 'monthly'}>
+            <MonthlyAnalytics
+              monthlyAnalytics={portfolioData()?.monthly_analytics || []}
               mode={metricMode()}
             />
           </Show>

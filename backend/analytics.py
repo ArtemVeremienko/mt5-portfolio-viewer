@@ -205,6 +205,7 @@ def process_portfolio_analytics(
             },
             "curves": [],
             "monthly_matrix": [],
+            "monthly_analytics": [],
             "symbol_stats": [],
             "hourly_stats": [],
             "day_of_week_stats": [],
@@ -511,6 +512,130 @@ def process_portfolio_analytics(
         row["total_r"] = round(row["total_r"], 2)
         row["total_pct"] = round((row["total_profit"] / max(1.0, total_deposits)) * 100.0, 2)
         monthly_matrix.append(row)
+
+    # Detailed Monthly Analytics (for 4-Quadrant Monthly Analytics View)
+    month_names_full = [
+        "", "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ]
+    month_names_short = [
+        "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ]
+
+    monthly_trades_map = {}
+    for td in trade_deals:
+        dt = datetime.fromtimestamp(td.get("time", 0), tz=timezone.utc)
+        k = (dt.year, dt.month)
+        if k not in monthly_trades_map:
+            monthly_trades_map[k] = []
+        monthly_trades_map[k].append(td)
+
+    monthly_analytics = []
+    for (yr, mo), m_trades in sorted(monthly_trades_map.items(), key=lambda x: (x[0][0], x[0][1])):
+        m_tot_profit = sum(t["net_profit"] for t in m_trades)
+        m_tot_lots = sum(t.get("volume", 0.0) for t in m_trades)
+        m_tot_pips = sum(t.get("pips", 0.0) for t in m_trades)
+        m_won = len([t for t in m_trades if t["net_profit"] > 0])
+        m_lost = len([t for t in m_trades if t["net_profit"] < 0])
+        m_change_pct = (m_tot_profit / max(1.0, current_run_bal)) * 100.0
+
+        curr_map = {}
+        for t in m_trades:
+            sym = t.get("symbol", "OTHER") or "OTHER"
+            if sym not in curr_map:
+                curr_map[sym] = {
+                    "symbol": sym,
+                    "trades": 0,
+                    "wins": [],
+                    "losses": [],
+                    "r_multiples": [],
+                    "long_durations": [],
+                    "short_durations": [],
+                    "profit": 0.0,
+                    "pips": 0.0,
+                    "lots": 0.0
+                }
+            curr_map[sym]["trades"] += 1
+            curr_map[sym]["profit"] += t["net_profit"]
+            curr_map[sym]["pips"] += t.get("pips", 0.0)
+            curr_map[sym]["lots"] += t.get("volume", 0.0)
+            curr_map[sym]["r_multiples"].append(t.get("r_multiple", 0.0))
+            
+            if t["net_profit"] > 0:
+                curr_map[sym]["wins"].append(t["net_profit"])
+            else:
+                curr_map[sym]["losses"].append(abs(t["net_profit"]))
+
+            dur = t.get("duration_seconds", 0)
+            if t.get("type", 0) == 0:
+                curr_map[sym]["long_durations"].append(dur)
+            else:
+                curr_map[sym]["short_durations"].append(dur)
+
+        currencies_list = []
+        tot_m_trades = len(m_trades)
+        for sym, c_data in curr_map.items():
+            sym_trades_cnt = c_data["trades"]
+            pop_pct = round((sym_trades_cnt / tot_m_trades) * 100.0, 1) if tot_m_trades > 0 else 0.0
+            
+            wins = c_data["wins"]
+            losses = c_data["losses"]
+            avg_win_val = float(np.mean(wins)) if wins else 0.0
+            avg_loss_val = float(np.mean(losses)) if losses else 0.0
+            
+            if losses and avg_loss_val > 0 and wins:
+                rr_ratio = round(avg_win_val / avg_loss_val, 2)
+                is_all_wins = False
+            elif wins and not losses:
+                rr_ratio = round(float(np.mean(c_data["r_multiples"])), 2) if c_data["r_multiples"] else 1.0
+                is_all_wins = True
+            else:
+                rr_ratio = 0.0
+                is_all_wins = False
+
+            long_durs = c_data["long_durations"]
+            short_durs = c_data["short_durations"]
+            all_durs = long_durs + short_durs
+            avg_long_sec = int(np.mean(long_durs)) if long_durs else 0
+            avg_short_sec = int(np.mean(short_durs)) if short_durs else 0
+            avg_tot_sec = int(np.mean(all_durs)) if all_durs else 0
+
+            currencies_list.append({
+                "symbol": sym,
+                "trades": sym_trades_cnt,
+                "popularity_pct": pop_pct,
+                "reward_risk_ratio": max(0.1, rr_ratio),
+                "is_all_wins": is_all_wins,
+                "avg_long_duration_sec": avg_long_sec,
+                "avg_long_duration_str": format_duration(avg_long_sec),
+                "avg_short_duration_sec": avg_short_sec,
+                "avg_short_duration_str": format_duration(avg_short_sec),
+                "avg_total_duration_sec": avg_tot_sec,
+                "avg_total_duration_str": format_duration(avg_tot_sec),
+                "long_trades": len(long_durs),
+                "short_trades": len(short_durs),
+                "profit": round(c_data["profit"], 2),
+                "pips": round(c_data["pips"], 1),
+                "lots": round(c_data["lots"], 2)
+            })
+
+        currencies_list.sort(key=lambda x: x["trades"], reverse=True)
+
+        monthly_analytics.append({
+            "year": yr,
+            "month": mo,
+            "month_name": month_names_full[mo],
+            "short_name": f"{month_names_short[mo]} {yr}",
+            "change_pct": round(m_change_pct, 2),
+            "profit": round(m_tot_profit, 2),
+            "lots": round(m_tot_lots, 2),
+            "pips": round(m_tot_pips, 1),
+            "trades": tot_m_trades,
+            "won": m_won,
+            "lost": m_lost,
+            "currencies": currencies_list
+        })
 
     # Symbol Breakdown
     symbol_dict = {}
@@ -975,6 +1100,7 @@ def process_portfolio_analytics(
         },
         "curves": curves,
         "monthly_matrix": monthly_matrix,
+        "monthly_analytics": monthly_analytics,
         "symbol_stats": symbol_stats,
         "hourly_stats": hourly_stats,
         "day_of_week_stats": day_of_week_stats,

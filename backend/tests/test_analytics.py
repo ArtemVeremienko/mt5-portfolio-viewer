@@ -194,3 +194,12 @@ def test_advanced_statistics_and_calendar():
 
     assert "duration_trades" in res
     assert len(res["duration_trades"]) == 3
+
+    assert "monthly_analytics" in res
+    assert len(res["monthly_analytics"]) >= 1
+    m0 = res["monthly_analytics"][0]
+    assert "currencies" in m0
+    assert len(m0["currencies"]) >= 1
+    assert "reward_risk_ratio" in m0["currencies"][0]
+    assert "popularity_pct" in m0["currencies"][0]
+    assert "avg_long_duration_sec" in m0["currencies"][0]
