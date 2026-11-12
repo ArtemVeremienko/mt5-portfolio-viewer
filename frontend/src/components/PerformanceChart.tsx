@@ -17,6 +17,38 @@ interface PerformanceChartProps {
 
 type ChartTab = 'growth' | 'balance' | 'profit' | 'drawdown' | 'r';
 
+interface BarItemMeta {
+  time: any;
+  value: number;
+  hoverColor: string;
+  dateStr: string;
+  title: string;
+  primaryValue: string;
+  secondaryValue: string;
+  isPositive: boolean;
+}
+
+interface BarTooltipData {
+  x: number;
+  y: number;
+  isPositive: boolean;
+  flipped: boolean;
+  title: string;
+  dateStr: string;
+  primaryValue: string;
+  secondaryValue: string;
+  valueColor: string;
+}
+
+const formatTooltipDate = (ts: number): string => {
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
 export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   let chartContainer: HTMLDivElement | undefined;
   let chart: IChartApi | null = null;
@@ -25,11 +57,12 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   let seriesList: ISeriesApi<any>[] = [];
   let activeBarSeries: ISeriesApi<any> | null = null;
   let activeHighlightSeries: ISeriesApi<any> | null = null;
-  let barDataMap = new Map<number, { time: any; value: number; hoverColor: string }>();
+  let barDataMap = new Map<number, BarItemMeta>();
   let lastHoveredTime: number | null = null;
 
   const [activeTab, setActiveTab] = createSignal<ChartTab>('growth');
   const [activeTimeframe, setActiveTimeframe] = createSignal<string>('ALL');
+  const [barTooltip, setBarTooltip] = createSignal<BarTooltipData | null>(null);
 
   // Series visibility toggles (Myfxbook style)
   const [showGrowth, setShowGrowth] = createSignal(true);
@@ -107,29 +140,67 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       },
     });
 
-    // Crosshair hover: illuminate hovered change bar using an error-free overlay series
+    // Crosshair hover: illuminate hovered change bar using an error-free overlay series & show anchored tooltip
     chart.subscribeCrosshairMove((param) => {
-      if (!activeHighlightSeries || !barDataMap.size) return;
+      if (!activeHighlightSeries || !barDataMap.size) {
+        setBarTooltip(null);
+        return;
+      }
       const time = param.time as number | undefined;
       if (time !== undefined && barDataMap.has(time)) {
+        const curr = barDataMap.get(time)!;
         if (time !== lastHoveredTime) {
-          const curr = barDataMap.get(time)!;
           try {
             activeHighlightSeries.setData([{ time: curr.time, value: curr.value, color: curr.hoverColor }]);
           } catch (e) {
-            // Safe guard against any canvas edge cases
+            // Safe guard against canvas edge cases
           }
           lastHoveredTime = time;
+        }
+
+        // Calculate anchored tooltip coordinates
+        try {
+          let x = chart?.timeScale().timeToCoordinate(time as any);
+          if (x === null || x === undefined) x = param.point?.x;
+
+          let y = activeBarSeries?.priceToCoordinate(curr.value);
+          if (y === null || y === undefined) y = param.point?.y;
+
+          if (x !== null && x !== undefined && y !== null && y !== undefined) {
+            const cWidth = chartContainer?.clientWidth || 800;
+            const cHeight = chartContainer?.clientHeight || 375;
+            const isPos = curr.isPositive;
+            // Clamp X so tooltip never clips left/right boundaries (card width ~140px)
+            const clampedX = Math.max(75, Math.min(cWidth - 75, x));
+            // Flip logic: if Y is too close to top edge (< 110px), flip below
+            const flipped = isPos ? y < 110 : y > cHeight - 110;
+            setBarTooltip({
+              x: clampedX,
+              y,
+              isPositive: isPos,
+              flipped,
+              title: curr.title,
+              dateStr: curr.dateStr,
+              primaryValue: curr.primaryValue,
+              secondaryValue: curr.secondaryValue,
+              valueColor: curr.isPositive ? 'text-emerald-400' : 'text-rose-400',
+            });
+          } else {
+            setBarTooltip(null);
+          }
+        } catch (e) {
+          setBarTooltip(null);
         }
       } else {
         if (lastHoveredTime !== null) {
           try {
             activeHighlightSeries.setData([]);
           } catch (e) {
-            // Safe guard against any canvas edge cases
+            // Safe guard against canvas edge cases
           }
           lastHoveredTime = null;
         }
+        setBarTooltip(null);
       }
     });
 
@@ -150,6 +221,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     activeHighlightSeries = null;
     barDataMap.clear();
     lastHoveredTime = null;
+    setBarTooltip(null);
   };
 
   const updateChartData = () => {
@@ -208,9 +280,20 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         activeBarSeries = barSeries;
         const barItems = sortedData.map(d => {
           const val = d.change_pct ?? 0;
+          const amt = d.change_amount ?? 0;
           const dimmedColor = val >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)';
           const hoverColor = val >= 0 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(244, 63, 94, 0.95)';
-          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, hoverColor });
+          const isPos = val >= 0;
+          barDataMap.set(d.timestamp, {
+            time: d.timestamp,
+            value: val,
+            hoverColor,
+            dateStr: formatTooltipDate(d.timestamp),
+            title: 'Change',
+            primaryValue: (isPos ? '+' : '') + val.toFixed(2) + '%',
+            secondaryValue: (amt >= 0 ? '+$' : '-$') + Math.abs(amt).toFixed(2),
+            isPositive: isPos,
+          });
           return {
             time: d.timestamp as any,
             value: val,
@@ -270,9 +353,20 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         activeBarSeries = barSeries;
         const barItems = sortedData.map(d => {
           const val = d.change_amount ?? 0;
+          const pct = d.change_pct ?? 0;
           const dimmedColor = val >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)';
           const hoverColor = val >= 0 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(244, 63, 94, 0.95)';
-          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, hoverColor });
+          const isPos = val >= 0;
+          barDataMap.set(d.timestamp, {
+            time: d.timestamp,
+            value: val,
+            hoverColor,
+            dateStr: formatTooltipDate(d.timestamp),
+            title: 'Trade Profit',
+            primaryValue: (isPos ? '+$' : '-$') + Math.abs(val).toFixed(2),
+            secondaryValue: (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%',
+            isPositive: isPos,
+          });
           return {
             time: d.timestamp as any,
             value: val,
@@ -326,9 +420,20 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         activeBarSeries = barSeries;
         const barItems = sortedData.map(d => {
           const val = d.change_amount ?? 0;
+          const pct = d.change_pct ?? 0;
           const dimmedColor = val >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)';
           const hoverColor = val >= 0 ? 'rgba(16, 185, 129, 0.95)' : 'rgba(244, 63, 94, 0.95)';
-          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, hoverColor });
+          const isPos = val >= 0;
+          barDataMap.set(d.timestamp, {
+            time: d.timestamp,
+            value: val,
+            hoverColor,
+            dateStr: formatTooltipDate(d.timestamp),
+            title: 'Trade Return',
+            primaryValue: (isPos ? '+$' : '-$') + Math.abs(val).toFixed(2),
+            secondaryValue: (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%',
+            isPositive: isPos,
+          });
           return {
             time: d.timestamp as any,
             value: val,
@@ -393,9 +498,21 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         activeBarSeries = barSeries;
         const barItems = sortedData.map(d => {
           const val = d.change_r ?? 0;
+          const amt = d.change_amount ?? 0;
+          const pct = d.change_pct ?? 0;
           const dimmedColor = val >= 0 ? 'rgba(168, 85, 247, 0.28)' : 'rgba(244, 63, 94, 0.28)';
           const hoverColor = val >= 0 ? 'rgba(168, 85, 247, 0.95)' : 'rgba(244, 63, 94, 0.95)';
-          barDataMap.set(d.timestamp, { time: d.timestamp, value: val, hoverColor });
+          const isPos = val >= 0;
+          barDataMap.set(d.timestamp, {
+            time: d.timestamp,
+            value: val,
+            hoverColor,
+            dateStr: formatTooltipDate(d.timestamp),
+            title: 'Trade Return',
+            primaryValue: (isPos ? '+' : '') + val.toFixed(2) + 'R',
+            secondaryValue: (amt >= 0 ? '+$' : '-$') + Math.abs(amt).toFixed(2) + (pct !== 0 ? ` (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)` : ''),
+            isPositive: isPos,
+          });
           return {
             time: d.timestamp as any,
             value: val,
@@ -704,11 +821,55 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
         </span>
       </div>
 
-      {/* Lightweight Chart Canvas Container */}
-      <div 
-        ref={chartContainer} 
-        class="w-full h-[375px] rounded-xl overflow-hidden relative border border-slate-950 shadow-inner"
-      />
+      {/* Lightweight Chart Canvas Container with Anchored Tooltip */}
+      <div class="w-full h-[375px] rounded-xl overflow-hidden relative border border-slate-950 shadow-inner">
+        <div ref={chartContainer} class="w-full h-full" />
+        
+        <Show when={barTooltip()}>
+          {(tip) => {
+            const isPos = tip().isPositive;
+            const flipped = tip().flipped;
+            const pointDown = (isPos && !flipped) || (!isPos && flipped);
+            return (
+              <div
+                class="pointer-events-none absolute z-30 transition-transform duration-75 select-none"
+                style={{
+                  left: `${tip().x}px`,
+                  top: `${tip().y}px`,
+                  transform: pointDown
+                    ? 'translate(-50%, calc(-100% - 10px))'
+                    : 'translate(-50%, 10px)',
+                }}
+              >
+                <div class="relative bg-slate-900/95 border border-slate-700/90 shadow-2xl backdrop-blur-md rounded-xl px-3.5 py-2.5 text-center min-w-[130px] flex flex-col gap-0.5">
+                  {/* Caret pointing to bar */}
+                  <Show when={pointDown}>
+                    <div class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 border-r border-b border-slate-700/90 rotate-45" />
+                  </Show>
+                  <Show when={!pointDown}>
+                    <div class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 border-l border-t border-slate-700/90 rotate-45" />
+                  </Show>
+
+                  <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    {tip().title}
+                  </div>
+                  <div class="text-[11px] font-medium text-slate-300 font-mono">
+                    {tip().dateStr}
+                  </div>
+                  <div class={`text-sm font-bold font-mono tracking-tight ${tip().valueColor}`}>
+                    {tip().primaryValue}
+                  </div>
+                  <Show when={tip().secondaryValue}>
+                    <div class="text-[11px] font-semibold font-mono text-slate-400">
+                      {tip().secondaryValue}
+                    </div>
+                  </Show>
+                </div>
+              </div>
+            );
+          }}
+        </Show>
+      </div>
     </div>
   );
 };
