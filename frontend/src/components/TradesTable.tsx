@@ -1,6 +1,7 @@
-import { Component, createSignal, For, Show } from 'solid-js';
+import { Component, createMemo, createSignal, For, Show } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { TradeDeal, OpenPosition, MetricMode, TradeScope, CashflowItem } from '../types';
-import { ListFilter, Search, ArrowUpRight, ArrowDownRight, History, Download, NotebookPen, X } from 'lucide-solid';
+import { Search, ArrowUpRight, ArrowDownRight, History, Download, NotebookPen, X, ArrowUpDown, Tag } from 'lucide-solid';
 
 interface TradesTableProps {
   openTrades: OpenPosition[];
@@ -14,8 +15,14 @@ interface TradesTableProps {
 }
 
 export const TradesTable: Component<TradesTableProps> = (props) => {
-  const [activeTab, setActiveTab] = createSignal<'open' | 'history' | 'cashflows'>('open');
+  const [activeTab, setActiveTab] = createSignal<'open' | 'history' | 'playbook' | 'cashflows'>(
+    props.openTrades.length > 0 ? 'open' : 'history'
+  );
   const [searchQuery, setSearchQuery] = createSignal('');
+  const [outcomeFilter, setOutcomeFilter] = createSignal<'all' | 'winners' | 'losers' | 'unreviewed'>('all');
+  const [tagFilter, setTagFilter] = createSignal<string>('');
+  const [sortBy, setSortBy] = createSignal<'time' | 'duration' | 'volume' | 'profit' | 'r_multiple'>('time');
+  const [sortDir, setSortDir] = createSignal<'asc' | 'desc'>('desc');
   const [page, setPage] = createSignal(1);
   const [editingTrade, setEditingTrade] = createSignal<TradeDeal | null>(null);
   const [noteText, setNoteText] = createSignal('');
@@ -58,16 +65,94 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     }
   };
 
+  const getNetProfit = (t: TradeDeal) =>
+    t.net_profit !== undefined ? t.net_profit : (t.profit + (t.swap || 0) + (t.commission || 0));
+
+  const toggleSort = (col: 'time' | 'duration' | 'volume' | 'profit' | 'r_multiple') => {
+    if (sortBy() === col) {
+      setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortBy(col);
+      setSortDir('desc');
+    }
+    setPage(1);
+  };
+
   const filteredClosed = () => {
     const q = searchQuery().trim().toUpperCase();
-    if (!q) return props.closedTrades;
-    return props.closedTrades.filter(
-      (t) =>
-        t.symbol.toUpperCase().includes(q) ||
-        String(t.ticket).includes(q) ||
-        t.comment.toUpperCase().includes(q)
-    );
+    const outcome = outcomeFilter();
+    const tag = tagFilter().trim().toLowerCase();
+
+    const list = props.closedTrades.filter((t) => {
+      if (q) {
+        const hit =
+          t.symbol.toUpperCase().includes(q) ||
+          String(t.ticket).includes(q) ||
+          (t.comment || '').toUpperCase().includes(q) ||
+          (t.setup_tag || '').toUpperCase().includes(q) ||
+          (t.mistake_tag || '').toUpperCase().includes(q);
+        if (!hit) return false;
+      }
+      const net = getNetProfit(t);
+      if (outcome === 'winners' && net <= 0) return false;
+      if (outcome === 'losers' && net >= 0) return false;
+      if (outcome === 'unreviewed' && (t.note || t.setup_tag || t.mistake_tag)) return false;
+      if (tag) {
+        const sTag = (t.setup_tag || '').trim().toLowerCase();
+        const mTag = (t.mistake_tag || '').trim().toLowerCase();
+        if (sTag !== tag && mTag !== tag) return false;
+      }
+      return true;
+    });
+
+    const col = sortBy();
+    const dir = sortDir() === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      let va = 0;
+      let vb = 0;
+      if (col === 'time') { va = a.time; vb = b.time; }
+      else if (col === 'duration') {
+        va = (a.time || 0) - (a.open_time || a.time || 0);
+        vb = (b.time || 0) - (b.open_time || b.time || 0);
+      } else if (col === 'volume') { va = a.volume; vb = b.volume; }
+      else if (col === 'profit') { va = getNetProfit(a); vb = getNetProfit(b); }
+      else if (col === 'r_multiple') { va = a.r_multiple; vb = b.r_multiple; }
+      return (va - vb) * dir;
+    });
   };
+
+  const tagAnalytics = createMemo(() => {
+    type TagRow = { tag: string; kind: 'setup' | 'mistake'; trades: number; won: number; totalR: number; totalProfit: number };
+    const map = new Map<string, TagRow>();
+    for (const t of props.closedTrades) {
+      const net = getNetProfit(t);
+      const sTag = (t.setup_tag || '').trim();
+      const mTag = (t.mistake_tag || '').trim();
+      if (sTag) {
+        const key = `setup:${sTag.toLowerCase()}`;
+        const cur = map.get(key) || { tag: sTag, kind: 'setup', trades: 0, won: 0, totalR: 0, totalProfit: 0 };
+        cur.trades += 1;
+        if (net > 0) cur.won += 1;
+        cur.totalR += t.r_multiple || 0;
+        cur.totalProfit += net;
+        map.set(key, cur);
+      }
+      if (mTag) {
+        const key = `mistake:${mTag.toLowerCase()}`;
+        const cur = map.get(key) || { tag: mTag, kind: 'mistake', trades: 0, won: 0, totalR: 0, totalProfit: 0 };
+        cur.trades += 1;
+        if (net > 0) cur.won += 1;
+        cur.totalR += t.r_multiple || 0;
+        cur.totalProfit += net;
+        map.set(key, cur);
+      }
+    }
+    const all = Array.from(map.values()).sort((a, b) => b.trades - a.trades);
+    return {
+      setups: all.filter(x => x.kind === 'setup'),
+      mistakes: all.filter(x => x.kind === 'mistake'),
+    };
+  });
 
   const paginatedClosed = () => {
     const list = filteredClosed();
@@ -95,15 +180,13 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     return `${days}d ${hrs % 24}h`;
   };
 
-  const getNetProfit = (t: TradeDeal) =>
-    t.net_profit !== undefined ? t.net_profit : (t.profit + (t.swap || 0) + (t.commission || 0));
-
   const exportCsv = () => {
     const rows = filteredClosed();
     const headers = [
       'Ticket', 'OpenTimeUTC', 'CloseTimeUTC', 'Duration', 'Type', 'Symbol',
-      'Lots', 'OpenPrice', 'ClosePrice', 'SL', 'TP', 'GrossProfit', 'Swap',
-      'Commission', 'NetProfit', 'Risk1R', 'RMultiple', 'Comment'
+      'Lots', 'OpenPrice', 'ClosePrice', 'SL', 'TP', 'Pips', 'GrossProfit', 'Swap',
+      'Commission', 'NetProfit', 'Risk1R', 'RMultiple', 'MAE_Amt', 'MFE_Amt',
+      'SetupTag', 'MistakeTag', 'Note', 'Comment'
     ];
     const escape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [
@@ -120,12 +203,18 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
         t.price,
         t.sl > 0 ? t.sl : '',
         t.tp > 0 ? t.tp : '',
+        (t.pips || 0).toFixed(1),
         t.profit.toFixed(2),
         (t.swap || 0).toFixed(2),
         (t.commission || 0).toFixed(2),
         getNetProfit(t).toFixed(2),
         (t.risk_r || 0).toFixed(2),
         t.r_multiple.toFixed(2),
+        (t.mae_amount || 0).toFixed(2),
+        (t.mfe_amount || 0).toFixed(2),
+        t.setup_tag || '',
+        t.mistake_tag || '',
+        t.note || '',
         t.comment || ''
       ].map(escape).join(','))
     ];
@@ -169,6 +258,21 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
             <span>Closed History</span>
             <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-300">
               {props.closedTrades.length}
+            </span>
+          </button>
+
+          <button
+            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              activeTab() === 'playbook'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            onClick={() => setActiveTab('playbook')}
+          >
+            <Tag size={12} />
+            <span>Playbook & Mistakes</span>
+            <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-300">
+              {tagAnalytics().setups.length + tagAnalytics().mistakes.length}
             </span>
           </button>
 
@@ -221,8 +325,10 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
           <div class="relative w-full sm:w-56">
             <Search size={14} class="absolute left-3 top-2.5 text-slate-500" />
             <input
+              id="trades-search"
+              name="trades_search"
               type="text"
-              placeholder="Search symbol, ticket..."
+              placeholder="Search symbol, ticket, tag..."
               value={searchQuery()}
               onInput={(e) => {
                 setSearchQuery(e.currentTarget.value);
@@ -248,29 +354,84 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
       {/* Tables */}
       <div class="overflow-x-auto">
         <Show when={activeTab() === 'history'}>
-          <div>
+          <div class="space-y-2.5">
+            {/* Quick Outcome & Tag Filter Pills */}
+            <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
+              {(['all', 'winners', 'losers', 'unreviewed'] as const).map((o) => (
+                <button
+                  onClick={() => { setOutcomeFilter(o); setPage(1); }}
+                  class={`px-2.5 py-1 rounded-lg font-medium border transition-colors capitalize ${
+                    outcomeFilter() === o
+                      ? 'bg-blue-600/20 text-blue-300 border-blue-500/40'
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                >
+                  {o}
+                </button>
+              ))}
+              <Show when={tagFilter()}>
+                <button
+                  onClick={() => { setTagFilter(''); setPage(1); }}
+                  class="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 font-medium flex items-center gap-1"
+                >
+                  <span>Tag: {tagFilter()}</span>
+                  <X size={11} />
+                </button>
+              </Show>
+            </div>
+
             <table class="w-full text-left text-xs">
               <thead>
                 <tr class="text-[11px] text-slate-400 border-b border-slate-800">
                   <th class="py-2.5 px-2">Ticket</th>
                   <th class="py-2.5 px-2">Open Time</th>
-                  <th class="py-2.5 px-2">Close Time</th>
-                  <th class="py-2.5 px-2">Dur.</th>
+                  <th class="py-2.5 px-2">
+                    <button onClick={() => toggleSort('time')} class="inline-flex items-center gap-1 hover:text-white">
+                      <span>Close Time</span><ArrowUpDown size={11} class={sortBy() === 'time' ? 'text-blue-400' : 'opacity-50'} />
+                    </button>
+                  </th>
+                  <th class="py-2.5 px-2">
+                    <button onClick={() => toggleSort('duration')} class="inline-flex items-center gap-1 hover:text-white">
+                      <span>Dur.</span><ArrowUpDown size={11} class={sortBy() === 'duration' ? 'text-blue-400' : 'opacity-50'} />
+                    </button>
+                  </th>
                   <th class="py-2.5 px-2">Type</th>
                   <th class="py-2.5 px-2">Symbol</th>
-                  <th class="py-2.5 px-2">Lots</th>
+                  <th class="py-2.5 px-2">
+                    <button onClick={() => toggleSort('volume')} class="inline-flex items-center gap-1 hover:text-white">
+                      <span>Lots</span><ArrowUpDown size={11} class={sortBy() === 'volume' ? 'text-blue-400' : 'opacity-50'} />
+                    </button>
+                  </th>
                   <th class="py-2.5 px-2">Open</th>
                   <th class="py-2.5 px-2">Close</th>
                   <th class="py-2.5 px-2">SL</th>
                   <th class="py-2.5 px-2">Swap</th>
                   <th class="py-2.5 px-2">Comm.</th>
-                  <th class="py-2.5 px-2">Net Profit</th>
+                  <th class="py-2.5 px-2">
+                    <button onClick={() => toggleSort('profit')} class="inline-flex items-center gap-1 hover:text-white">
+                      <span>Net Profit</span><ArrowUpDown size={11} class={sortBy() === 'profit' ? 'text-blue-400' : 'opacity-50'} />
+                    </button>
+                  </th>
                   <th class="py-2.5 px-2">Comment</th>
                   <th class="py-2.5 px-2">Journal</th>
-                  <th class="py-2.5 px-2 text-right">R-Multiple</th>
+                  <th class="py-2.5 px-2 text-right">
+                    <button onClick={() => toggleSort('r_multiple')} class="inline-flex items-center gap-1 hover:text-white ml-auto">
+                      <span>R-Multiple</span><ArrowUpDown size={11} class={sortBy() === 'r_multiple' ? 'text-purple-400' : 'opacity-50'} />
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-800/60">
+                <Show
+                  when={paginatedClosed().length > 0}
+                  fallback={
+                    <tr>
+                      <td colspan="16" class="py-8 text-center text-slate-500 text-xs">
+                        No closed trades match your search or filters.
+                      </td>
+                    </tr>
+                  }
+                >
                 <For each={paginatedClosed()}>
                   {(t) => {
                     const netVal = getNetProfit(t);
@@ -333,12 +494,17 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                     </tr>
                   );}}
                 </For>
+                </Show>
               </tbody>
             </table>
 
             {/* Pagination Controls */}
             <div class="flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs text-slate-400">
-              <span>Showing {((page() - 1) * pageSize) + 1} to {Math.min(page() * pageSize, filteredClosed().length)} of {filteredClosed().length} deals</span>
+              <span>
+                {filteredClosed().length === 0
+                  ? 'Showing 0 of 0 deals'
+                  : `Showing ${((page() - 1) * pageSize) + 1} to ${Math.min(page() * pageSize, filteredClosed().length)} of ${filteredClosed().length} deals`}
+              </span>
               <div class="flex items-center gap-1">
                 <button
                   disabled={page() <= 1}
@@ -461,11 +627,81 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
         </Show>
       </div>
 
-      {/* Trade Journal Note Modal */}
+      {/* Playbook & Mistakes Tab */}
+      <Show when={activeTab() === 'playbook'}>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-400">Setup Playbook</h4>
+            <Show
+              when={tagAnalytics().setups.length > 0}
+              fallback={<p class="text-xs text-slate-500 py-4 text-center">No setup tags logged yet. Use Journal → Log on closed trades.</p>}
+            >
+              <div class="space-y-1.5">
+                <For each={tagAnalytics().setups}>
+                  {(row) => {
+                    const wr = (row.won / Math.max(1, row.trades)) * 100;
+                    const expR = row.totalR / Math.max(1, row.trades);
+                    return (
+                      <button
+                        onClick={() => { setTagFilter(row.tag); setActiveTab('history'); setPage(1); }}
+                        class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs transition-colors"
+                      >
+                        <div class="text-left">
+                          <div class="font-semibold text-white">{row.tag}</div>
+                          <div class="text-[10px] text-slate-400 font-mono">{row.trades} trades • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R</div>
+                        </div>
+                        <div class="text-right font-mono">
+                          <div class={`font-bold ${row.totalR >= 0 ? 'text-purple-300' : 'text-rose-400'}`}>{row.totalR >= 0 ? '+' : ''}{row.totalR.toFixed(2)}R</div>
+                          <div class={`text-[10px] ${row.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{row.totalProfit >= 0 ? '+$' : '-$'}{Math.abs(row.totalProfit).toFixed(2)}</div>
+                        </div>
+                      </button>
+                    );
+                  }}
+                </For>
+              </div>
+            </Show>
+          </div>
+
+          <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-rose-400">Mistake & Execution Leaks</h4>
+            <Show
+              when={tagAnalytics().mistakes.length > 0}
+              fallback={<p class="text-xs text-slate-500 py-4 text-center">No mistake tags logged yet.</p>}
+            >
+              <div class="space-y-1.5">
+                <For each={tagAnalytics().mistakes}>
+                  {(row) => {
+                    const wr = (row.won / Math.max(1, row.trades)) * 100;
+                    const expR = row.totalR / Math.max(1, row.trades);
+                    return (
+                      <button
+                        onClick={() => { setTagFilter(row.tag); setActiveTab('history'); setPage(1); }}
+                        class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs transition-colors"
+                      >
+                        <div class="text-left">
+                          <div class="font-semibold text-white">{row.tag}</div>
+                          <div class="text-[10px] text-slate-400 font-mono">{row.trades} trades • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R</div>
+                        </div>
+                        <div class="text-right font-mono">
+                          <div class={`font-bold ${row.totalR >= 0 ? 'text-purple-300' : 'text-rose-400'}`}>{row.totalR >= 0 ? '+' : ''}{row.totalR.toFixed(2)}R</div>
+                          <div class={`text-[10px] ${row.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{row.totalProfit >= 0 ? '+$' : '-$'}{Math.abs(row.totalProfit).toFixed(2)}</div>
+                        </div>
+                      </button>
+                    );
+                  }}
+                </For>
+              </div>
+            </Show>
+          </div>
+        </div>
+      </Show>
+
+      {/* Trade Journal Note Modal (Portal ensures true viewport centering) */}
       <Show when={editingTrade()}>
         {(t) => (
-          <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-md shadow-2xl space-y-4">
+          <Portal>
+            <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+              <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
               <div class="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div>
                   <h4 class="text-sm font-bold text-white">Trade Journal — #{t().ticket}</h4>
@@ -523,7 +759,8 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                 </button>
               </div>
             </div>
-          </div>
+            </div>
+          </Portal>
         )}
       </Show>
 

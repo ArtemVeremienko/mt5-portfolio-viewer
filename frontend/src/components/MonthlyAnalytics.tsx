@@ -147,7 +147,7 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-sm space-y-3 flex flex-col justify-between">
           <div class="text-center border-b border-slate-800/80 pb-2">
             <h4 class="text-xs font-bold text-slate-200 tracking-wide">
-              Monthly Gain({metricLabel()})
+              Monthly Gain ({metricLabel()})
             </h4>
           </div>
 
@@ -301,7 +301,7 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-sm space-y-3 flex flex-col justify-between">
           <div class="text-center border-b border-slate-800/80 pb-2">
             <h4 class="text-xs font-bold text-slate-200 tracking-wide">
-              {selectedMonth() ? `Reward : Risk Ratios for ${selectedMonth()?.month_name}.` : 'Reward : Risk Ratios'}
+              {selectedMonth() ? `Reward : Risk Ratios for ${selectedMonth()?.month_name}` : 'Reward : Risk Ratios'}
             </h4>
           </div>
 
@@ -401,7 +401,7 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-sm space-y-3 flex flex-col justify-between">
           <div class="text-center border-b border-slate-800/80 pb-2">
             <h4 class="text-xs font-bold text-slate-200 tracking-wide">
-              {selectedMonth() ? `Currencies popularity for ${selectedMonth()?.month_name}.` : 'Currencies popularity'}
+              {selectedMonth() ? `Currencies popularity for ${selectedMonth()?.month_name}` : 'Currencies popularity'}
             </h4>
           </div>
 
@@ -501,7 +501,7 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-sm space-y-3 flex flex-col justify-between">
           <div class="text-center border-b border-slate-800/80 pb-2">
             <h4 class="text-xs font-bold text-slate-200 tracking-wide">
-              {selectedMonth() ? `Average holding time for ${selectedMonth()?.month_name}.` : 'Average holding time'}
+              {selectedMonth() ? `Average holding time for ${selectedMonth()?.month_name}` : 'Average holding time'}
             </h4>
           </div>
 

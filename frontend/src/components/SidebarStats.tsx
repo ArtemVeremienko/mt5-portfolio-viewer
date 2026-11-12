@@ -148,7 +148,7 @@ export const SidebarStats: Component<SidebarStatsProps> = (props) => {
           {(() => {
             const fl = (s()?.equity ?? 0) - (s()?.balance ?? 0);
             return (
-              <span class={`font-semibold ${fl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              <span class={`font-semibold font-mono tabular-nums ${fl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {fl >= 0 ? '+' : ''}{formatCurrency(fl)}
               </span>
             );
@@ -157,31 +157,44 @@ export const SidebarStats: Component<SidebarStatsProps> = (props) => {
 
         <div class="flex items-center justify-between">
           <span class="text-slate-400">Highest:</span>
-          <span class="font-medium text-slate-300">{formatCurrency(s()?.highest_balance)}</span>
+          <span class="font-medium text-slate-300 font-mono tabular-nums">{formatCurrency(s()?.highest_balance)}</span>
         </div>
 
         <div class="flex items-center justify-between">
           <span class="text-slate-400">Profit:</span>
-          <span class={`font-semibold ${ (s()?.total_profit ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400' }`}>
+          <span class={`font-semibold font-mono tabular-nums ${ (s()?.total_profit ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400' }`}>
             {formatCurrency(s()?.total_profit)}
           </span>
         </div>
 
         <div class="flex items-center justify-between">
           <span class="text-slate-400">Interest (Swap):</span>
-          <span class={`font-medium ${ (s()?.total_swap ?? 0) >= 0 ? 'text-slate-300' : 'text-rose-400/80' }`}>
+          <span class={`font-medium font-mono tabular-nums ${ (s()?.total_swap ?? 0) >= 0 ? 'text-slate-300' : 'text-rose-400/80' }`}>
             {formatCurrency(s()?.total_swap)}
           </span>
         </div>
 
         <div class="flex items-center justify-between">
+          <span class="text-slate-400">Commissions:</span>
+          <span class="font-medium text-slate-300 font-mono tabular-nums">{formatCurrency(s()?.total_commission)}</span>
+        </div>
+
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">Free Margin:</span>
+          <span class="font-medium text-slate-300 font-mono tabular-nums">
+            {formatCurrency(props.account?.free_margin)}
+            {props.account?.margin_level ? ` (${props.account.margin_level.toFixed(0)}%)` : ''}
+          </span>
+        </div>
+
+        <div class="flex items-center justify-between">
           <span class="text-slate-400">Deposits:</span>
-          <span class="font-medium text-slate-300">{formatCurrency(s()?.deposits)}</span>
+          <span class="font-medium text-slate-300 font-mono tabular-nums">{formatCurrency(s()?.deposits)}</span>
         </div>
 
         <div class="flex items-center justify-between">
           <span class="text-slate-400">Withdrawals:</span>
-          <span class="font-medium text-slate-300">{formatCurrency(s()?.withdrawals)}</span>
+          <span class="font-medium text-slate-300 font-mono tabular-nums">{formatCurrency(s()?.withdrawals)}</span>
         </div>
       </div>
 

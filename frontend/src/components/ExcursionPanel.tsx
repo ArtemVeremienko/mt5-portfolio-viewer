@@ -549,9 +549,9 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                     </g>
 
                     {/* Bottom-Left Badge: Scratch / Noise */}
-                    <g opacity="0.9">
-                      <rect x={padLeft + 10} y={20 + plotH - 34} width="160" height="24" rx="6" fill="#0b1120" fill-opacity="0.85" stroke="#64748b" stroke-opacity="0.35" stroke-width="1" />
-                      <text x={padLeft + 18} y={20 + plotH - 18} fill="#94a3b8" font-size="10" font-weight="bold">SCRATCH / NOISE ({((q.scratchCount / Math.max(1, trades().length)) * 100).toFixed(1)}%)</text>
+                    <g opacity="0.95">
+                      <rect x={padLeft + 10} y={20 + plotH - 34} width="160" height="24" rx="6" fill="#0b1120" fill-opacity="0.92" stroke="#64748b" stroke-opacity="0.45" stroke-width="1" />
+                      <text x={padLeft + 18} y={20 + plotH - 18} fill="#cbd5e1" font-size="10" font-weight="bold">SCRATCH / NOISE ({((q.scratchCount / Math.max(1, trades().length)) * 100).toFixed(1)}%)</text>
                     </g>
 
                     {/* Bottom-Right Badge: Toxic / Bleeders */}

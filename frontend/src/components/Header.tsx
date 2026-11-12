@@ -27,27 +27,29 @@ interface HeaderProps {
 
 export const Header: Component<HeaderProps> = (props) => {
   return (
-    <header class="bg-slate-900 border-b border-slate-800 px-6 py-3 sticky top-0 z-50">
-      <div class="max-w-[1600px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+    <header class="bg-slate-900 border-b border-slate-800 px-4 sm:px-6 py-3 sticky top-0 z-50">
+      <div class="max-w-[1600px] mx-auto flex flex-col lg:flex-row lg:flex-wrap items-center justify-between gap-3 lg:gap-4">
         
         {/* Brand & Account Selector */}
-        <div class="flex items-center gap-4 w-full md:w-auto justify-between md:justify-start">
-          <div class="flex items-center gap-2.5">
-            <div class="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold text-lg">
+        <div class="flex items-center gap-3 sm:gap-4 w-full lg:w-auto justify-between lg:justify-start min-w-0">
+          <div class="flex items-center gap-2.5 shrink-0">
+            <div class="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold text-lg shrink-0">
               fx
             </div>
             <div>
               <div class="flex items-center gap-2">
-                <h1 class="text-base font-bold text-white tracking-tight">MT5 Portfolio Viewer</h1>
+                <h1 class="text-sm sm:text-base font-bold text-white tracking-tight whitespace-nowrap">MT5 Portfolio Viewer</h1>
               </div>
-              <p class="text-xs text-slate-400">MetaTrader 5 Automated Analytics</p>
+              <p class="text-[11px] sm:text-xs text-slate-400 whitespace-nowrap">MetaTrader 5 Automated Analytics</p>
             </div>
           </div>
 
           {/* Account Dropdown Switcher */}
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial justify-end">
             <select
-              class="bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-medium rounded-lg px-3 py-1.5 border border-slate-700 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer"
+              id="account-select"
+              name="account"
+              class="w-full max-w-[170px] sm:max-w-[260px] truncate bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg px-2.5 sm:px-3 py-1.5 border border-slate-700 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer"
               value={props.activeLogin || ''}
               onChange={(e) => props.onSelectAccount(Number(e.currentTarget.value))}
             >

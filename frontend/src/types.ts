@@ -28,6 +28,7 @@ export interface PortfolioStats {
   daily_gain_pct: number;
   monthly_gain_pct: number;
   max_drawdown_pct: number;
+  current_drawdown_pct?: number;
   max_drawdown_amount: number;
   max_drawdown_r: number;
   balance: number;
@@ -41,6 +42,7 @@ export interface PortfolioStats {
   total_trades: number;
   won_trades: number;
   lost_trades: number;
+  breakeven_trades?: number;
   win_rate: number;
   profit_factor: number;
   sharpe_ratio: number;
@@ -290,6 +292,8 @@ export interface TradeDeal {
   swap: number;
   commission: number;
   comment: string;
+  magic?: number;
+  pips?: number;
   risk_r: number;
   r_multiple: number;
   net_profit?: number;
@@ -350,6 +354,8 @@ export interface OpenPosition {
   profit: number;
   swap: number;
   comment: string;
+  magic?: number;
+  pips?: number;
 }
 
 export interface CashflowItem {
@@ -358,6 +364,8 @@ export interface CashflowItem {
   amount: number;
   type: 'Deposit' | 'Withdrawal';
   comment: string;
+  magic?: number;
+  pips?: number;
   balance_after: number;
 }
 
@@ -379,5 +387,6 @@ export interface PortfolioData {
   cashflows?: CashflowItem[];
   available_symbols?: string[];
   available_comments?: string[];
+  available_magics?: number[];
   closed_trades: TradeDeal[];
 }

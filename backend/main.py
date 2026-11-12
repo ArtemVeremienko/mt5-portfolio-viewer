@@ -180,6 +180,7 @@ def get_portfolio(
     symbol: Optional[str] = Query(None),
     direction: Optional[str] = Query(None),
     comment: Optional[str] = Query(None),
+    magic: Optional[int] = Query(None),
     all_accounts: Optional[bool] = Query(False),
 ):
     global CURRENT_ACTIVE_LOGIN
@@ -238,6 +239,7 @@ def get_portfolio(
         symbol=symbol,
         direction=direction,
         comment=comment,
+        magic=magic,
     )
     for t in analytics_result.get("closed_trades", []):
         n = notes_map.get(int(t.get("ticket", 0)))

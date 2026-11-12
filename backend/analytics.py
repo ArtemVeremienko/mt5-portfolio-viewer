@@ -1,4 +1,5 @@
 import math
+import re
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 import numpy as np
@@ -140,6 +141,7 @@ def process_portfolio_analytics(
     symbol: Optional[str] = None,
     direction: Optional[str] = None,
     comment: Optional[str] = None,
+    magic: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Computes comprehensive Myfxbook performance statistics and Van Tharp R-Multiple analytics.
@@ -155,6 +157,7 @@ def process_portfolio_analytics(
                 "daily_gain_pct": 0.0,
                 "monthly_gain_pct": 0.0,
                 "max_drawdown_pct": 0.0,
+                "current_drawdown_pct": 0.0,
                 "max_drawdown_amount": 0.0,
                 "max_drawdown_r": 0.0,
                 "balance": current_bal,
@@ -168,6 +171,7 @@ def process_portfolio_analytics(
                 "total_trades": 0,
                 "won_trades": 0,
                 "lost_trades": 0,
+                "breakeven_trades": 0,
                 "win_rate": 0.0,
                 "profit_factor": 0.0,
                 "sharpe_ratio": 0.0,
@@ -240,7 +244,8 @@ def process_portfolio_analytics(
             }
         }
 
-    # Extract available symbols & comments across all deals for UI filter dropdowns
+    # Extract available symbols, clean strategy comments & magic numbers across all deals for UI filter dropdowns
+    _auto_sl_tp_re = re.compile(r"^\[(sl|tp)\s+[\d.]+\]$", re.IGNORECASE)
     available_symbols = sorted({
         str(x.get("symbol", "")).strip()
         for x in deals
@@ -249,10 +254,18 @@ def process_portfolio_analytics(
     available_comments = sorted({
         str(x.get("comment", "")).strip()
         for x in deals
-        if x.get("entry") in (1, 2) and x.get("type") in (0, 1) and x.get("comment")
+        if x.get("entry") in (1, 2)
+        and x.get("type") in (0, 1)
+        and x.get("comment")
+        and not _auto_sl_tp_re.match(str(x.get("comment", "")).strip())
+    })
+    available_magics = sorted({
+        int(x.get("magic", 0) or 0)
+        for x in deals
+        if x.get("entry") in (1, 2) and x.get("type") in (0, 1) and int(x.get("magic", 0) or 0) > 0
     })
 
-    # Filter deals by time window and optional symbol/direction/comment
+    # Filter deals by time window and optional symbol/direction/comment/magic
     dir_filter = direction.upper().strip() if direction else None
     sym_filter = symbol.upper().strip() if symbol else None
     cmt_filter = comment.lower().strip() if comment else None
@@ -272,6 +285,8 @@ def process_portfolio_analytics(
             if dir_filter == "SELL" and int(d.get("type", 0) or 0) != 1:
                 continue
             if cmt_filter and cmt_filter not in str(d.get("comment", "")).lower():
+                continue
+            if magic is not None and int(d.get("magic", 0) or 0) != magic:
                 continue
         filtered_deals.append(d)
 
@@ -1115,7 +1130,7 @@ def process_portfolio_analytics(
         summary_dict[sym]["total_profit"] += prof_num
         if prof_num > 0:
             summary_dict[sym]["won_count"] += 1
-        else:
+        elif prof_num < 0:
             summary_dict[sym]["lost_count"] += 1
             
         if t_type == 0:
@@ -1253,6 +1268,7 @@ def process_portfolio_analytics(
             "daily_gain_pct": round(daily_gain_pct, 2),
             "monthly_gain_pct": round(monthly_gain_pct, 2),
             "max_drawdown_pct": round(max_dd_pct, 2),
+            "current_drawdown_pct": round(max(0.0, (peak_balance - latest_eq) / peak_balance * 100.0), 2) if peak_balance > 0 else 0.0,
             "max_drawdown_amount": round(max_dd_amount, 2),
             "max_drawdown_r": round(max_dd_r, 2),
             "balance": round(latest_bal, 2),
@@ -1266,6 +1282,7 @@ def process_portfolio_analytics(
             "total_trades": total_trades,
             "won_trades": won_count,
             "lost_trades": lost_count,
+            "breakeven_trades": max(0, total_trades - won_count - lost_count),
             "win_rate": round(win_rate, 2),
             "profit_factor": round(profit_factor, 2),
             "sharpe_ratio": round(sharpe_ratio, 2),
@@ -1349,5 +1366,6 @@ def process_portfolio_analytics(
         "cashflows": cashflows[::-1],
         "available_symbols": available_symbols,
         "available_comments": available_comments,
+        "available_magics": available_magics,
         "closed_trades": trade_deals[::-1] # Reverse to display newest first
     }

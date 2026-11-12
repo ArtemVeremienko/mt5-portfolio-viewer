@@ -47,7 +47,19 @@ export const App: Component = () => {
   const [filterSymbol, setFilterSymbol] = createSignal<string>('');
   const [filterDirection, setFilterDirection] = createSignal<string>('');
   const [filterComment, setFilterComment] = createSignal<string>('');
+  const [filterMagic, setFilterMagic] = createSignal<string>('');
   const [allAccountsMode, setAllAccountsMode] = createSignal<boolean>(false);
+  const [isLoading, setIsLoading] = createSignal<boolean>(true);
+  const [fetchError, setFetchError] = createSignal<string | null>(null);
+
+  // Configurable Prop Risk Guard limits (persisted in localStorage)
+  const [propDailyLimit, setPropDailyLimit] = createSignal<number>(
+    Number(localStorage.getItem('propDailyLimit') || '-5')
+  );
+  const [propMaxDdLimit, setPropMaxDdLimit] = createSignal<number>(
+    Number(localStorage.getItem('propMaxDdLimit') || '10')
+  );
+  const [showPropConfig, setShowPropConfig] = createSignal<boolean>(false);
 
   let ws: WebSocket | null = null;
   let wsReconnectTimer: any = null;
@@ -67,6 +79,8 @@ export const App: Component = () => {
   };
 
   const fetchPortfolio = async (overrideScope?: TradeScope) => {
+    setIsLoading(true);
+    setFetchError(null);
     try {
       const params = new URLSearchParams();
       const scopeVal = overrideScope || tradeScope();
@@ -82,6 +96,7 @@ export const App: Component = () => {
       if (filterSymbol()) params.set('symbol', filterSymbol());
       if (filterDirection()) params.set('direction', filterDirection());
       if (filterComment()) params.set('comment', filterComment());
+      if (filterMagic()) params.set('magic', filterMagic());
       if (allAccountsMode()) params.set('all_accounts', 'true');
 
       const qs = params.toString();
@@ -89,14 +104,19 @@ export const App: Component = () => {
       if (res.ok) {
         const data: PortfolioData = await res.json();
         setPortfolioData(data);
+      } else {
+        setFetchError(`Failed to load portfolio data (HTTP ${res.status})`);
       }
     } catch (e) {
       console.error('Failed to fetch portfolio data:', e);
+      setFetchError('Unable to reach backend server. Check that the server is running.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const hasActiveFilters = () =>
-    Boolean(filterStartDate() || filterEndDate() || filterSymbol() || filterDirection() || filterComment() || allAccountsMode() || tradeScope() === 'last100');
+    Boolean(filterStartDate() || filterEndDate() || filterSymbol() || filterDirection() || filterComment() || filterMagic() || allAccountsMode() || tradeScope() === 'last100');
 
   const clearAllFilters = () => {
     setFilterStartDate('');
@@ -104,6 +124,7 @@ export const App: Component = () => {
     setFilterSymbol('');
     setFilterDirection('');
     setFilterComment('');
+    setFilterMagic('');
     setAllAccountsMode(false);
     setTradeScope('all');
     fetchPortfolio('all');
@@ -338,10 +359,32 @@ export const App: Component = () => {
             </button>
           </div>
 
+          {/* Error / Loading Banner */}
+          <Show when={fetchError()}>
+            <div class="flex items-center justify-between gap-3 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-xl px-4 py-2.5 text-xs">
+              <span>{fetchError()}</span>
+              <button
+                onClick={() => fetchPortfolio()}
+                class="px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-semibold transition-colors shrink-0"
+              >
+                Retry
+              </button>
+            </div>
+          </Show>
+
+          <Show when={isLoading() && !portfolioData()}>
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 animate-pulse space-y-3">
+              <div class="h-4 w-48 bg-slate-800 rounded"></div>
+              <div class="h-48 w-full bg-slate-800/60 rounded-xl"></div>
+            </div>
+          </Show>
+
           {/* Custom Analysis Global Filter Bar */}
           <div class="flex flex-wrap items-center gap-2 bg-slate-900/70 border border-slate-800/90 rounded-2xl px-3.5 py-2.5 text-xs">
             <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mr-1">Filters:</span>
             <input
+              id="filter-start-date"
+              name="start_date"
               type="date"
               value={filterStartDate()}
               onChange={(e) => { setFilterStartDate(e.currentTarget.value); fetchPortfolio(); }}
@@ -350,6 +393,8 @@ export const App: Component = () => {
             />
             <span class="text-slate-600">→</span>
             <input
+              id="filter-end-date"
+              name="end_date"
               type="date"
               value={filterEndDate()}
               onChange={(e) => { setFilterEndDate(e.currentTarget.value); fetchPortfolio(); }}
@@ -358,6 +403,8 @@ export const App: Component = () => {
             />
 
             <select
+              id="filter-symbol"
+              name="symbol"
               value={filterSymbol()}
               onChange={(e) => { setFilterSymbol(e.currentTarget.value); fetchPortfolio(); }}
               class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-blue-500"
@@ -369,6 +416,8 @@ export const App: Component = () => {
             </select>
 
             <select
+              id="filter-direction"
+              name="direction"
               value={filterDirection()}
               onChange={(e) => { setFilterDirection(e.currentTarget.value); fetchPortfolio(); }}
               class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-blue-500"
@@ -379,6 +428,8 @@ export const App: Component = () => {
             </select>
 
             <select
+              id="filter-comment"
+              name="comment"
               value={filterComment()}
               onChange={(e) => { setFilterComment(e.currentTarget.value); fetchPortfolio(); }}
               class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 max-w-[140px] focus:outline-none focus:border-blue-500"
@@ -388,6 +439,21 @@ export const App: Component = () => {
                 <option value={c}>{c}</option>
               ))}
             </select>
+
+            <Show when={(portfolioData()?.available_magics || []).length > 0}>
+              <select
+                id="filter-magic"
+                name="magic"
+                value={filterMagic()}
+                onChange={(e) => { setFilterMagic(e.currentTarget.value); fetchPortfolio(); }}
+                class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 max-w-[130px] focus:outline-none focus:border-blue-500"
+              >
+                <option value="">All Magic #</option>
+                {(portfolioData()?.available_magics || []).map(m => (
+                  <option value={String(m)}>Magic #{m}</option>
+                ))}
+              </select>
+            </Show>
 
             <Show when={accounts().length > 1}>
               <button
@@ -430,7 +496,10 @@ export const App: Component = () => {
               const todayP = st?.today_profit ?? 0;
               const weekP = st?.week_profit ?? 0;
               const monthP = st?.month_profit ?? 0;
-              const dailyPct = bal > 0 ? (todayP / bal) * 100 : 0;
+              const equityDailyPct = bal > 0 ? ((todayP + fl) / bal) * 100 : 0;
+              const activeDdPct = st?.current_drawdown_pct ?? 0;
+              const dailyLim = propDailyLimit();
+              const maxDdLim = propMaxDdLimit();
               return (
                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   <div class="bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5">
@@ -438,7 +507,7 @@ export const App: Component = () => {
                     <div class={`text-sm font-bold font-mono mt-0.5 ${todayP >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {todayP >= 0 ? '+$' : '-$'}{Math.abs(todayP).toFixed(2)}
                     </div>
-                    <div class="text-[10px] text-slate-500 font-mono">{(st?.today_r ?? 0) >= 0 ? '+' : ''}{(st?.today_r ?? 0).toFixed(2)}R • {dailyPct >= 0 ? '+' : ''}{dailyPct.toFixed(2)}%</div>
+                    <div class="text-[10px] text-slate-500 font-mono">{(st?.today_r ?? 0) >= 0 ? '+' : ''}{(st?.today_r ?? 0).toFixed(2)}R • {equityDailyPct >= 0 ? '+' : ''}{equityDailyPct.toFixed(2)}%</div>
                   </div>
                   <div class="bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5">
                     <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">This Week</div>
@@ -464,14 +533,66 @@ export const App: Component = () => {
                     </div>
                     <div class="text-[10px] text-blue-400 font-medium">{openTrades().length} Open Position{openTrades().length === 1 ? '' : 's'} →</div>
                   </button>
-                  <div class="bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5 col-span-2 sm:col-span-1">
-                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Prop Risk Guard</div>
-                    <div class="text-xs font-bold text-slate-200 font-mono mt-1">
-                      Daily: <span class={dailyPct <= -4 ? 'text-rose-400' : 'text-emerald-400'}>{dailyPct.toFixed(2)}%</span> <span class="text-slate-500">/ -5%</span>
+                  <div class="relative bg-slate-900/90 border border-slate-800 rounded-xl px-3.5 py-2.5 col-span-2 sm:col-span-1">
+                    <div class="flex items-center justify-between">
+                      <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Prop Risk Guard</div>
+                      <button
+                        onClick={() => setShowPropConfig(!showPropConfig())}
+                        class="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded bg-slate-800/80 border border-slate-700"
+                        title="Configure Prop Firm DD limits"
+                      >
+                        Edit
+                      </button>
                     </div>
-                    <div class="text-[10px] text-slate-400 font-mono">
-                      Max DD: <span class={(st?.max_drawdown_pct ?? 0) >= 8 ? 'text-rose-400' : 'text-amber-300'}>{(st?.max_drawdown_pct ?? 0).toFixed(2)}%</span> / 10%
+                    <div class="text-xs font-bold text-slate-200 font-mono mt-1" title="Includes closed today P&L + live floating P&L">
+                      Daily Eq: <span class={equityDailyPct <= dailyLim * 0.8 ? 'text-rose-400' : 'text-emerald-400'}>{equityDailyPct.toFixed(2)}%</span> <span class="text-slate-500">/ {dailyLim}%</span>
                     </div>
+                    <div class="text-[10px] text-slate-400 font-mono" title={`Historical Max DD: ${(st?.max_drawdown_pct ?? 0).toFixed(2)}%`}>
+                      Active DD: <span class={activeDdPct >= maxDdLim * 0.8 ? 'text-rose-400' : 'text-amber-300'}>{activeDdPct.toFixed(2)}%</span> / {maxDdLim}%
+                    </div>
+                    <Show when={showPropConfig()}>
+                      <div class="absolute right-0 top-full mt-1.5 z-40 w-56 bg-slate-900 border border-slate-700 rounded-xl p-3 shadow-2xl space-y-2 text-xs">
+                        <div class="font-bold text-white text-[11px]">Prop Firm Limits</div>
+                        <label class="flex items-center justify-between text-slate-300 text-[11px]">
+                          <span>Daily Loss %</span>
+                          <input
+                            id="prop-daily-limit"
+                            name="prop_daily_limit"
+                            type="number"
+                            step="0.5"
+                            max="0"
+                            value={dailyLim}
+                            onChange={(e) => {
+                              const v = Number(e.currentTarget.value);
+                              if (!isNaN(v) && v <= 0) {
+                                setPropDailyLimit(v);
+                                localStorage.setItem('propDailyLimit', String(v));
+                              }
+                            }}
+                            class="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-white"
+                          />
+                        </label>
+                        <label class="flex items-center justify-between text-slate-300 text-[11px]">
+                          <span>Max DD %</span>
+                          <input
+                            id="prop-max-dd-limit"
+                            name="prop_max_dd_limit"
+                            type="number"
+                            step="0.5"
+                            min="1"
+                            value={maxDdLim}
+                            onChange={(e) => {
+                              const v = Number(e.currentTarget.value);
+                              if (!isNaN(v) && v > 0) {
+                                setPropMaxDdLimit(v);
+                                localStorage.setItem('propMaxDdLimit', String(v));
+                              }
+                            }}
+                            class="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-white"
+                          />
+                        </label>
+                      </div>
+                    </Show>
                   </div>
                 </div>
               );

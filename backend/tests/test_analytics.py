@@ -241,3 +241,24 @@ def test_entry_commission_twr_and_single_trade_sqn():
     assert stats["abs_gain_pct"] == pytest.approx(5.0, 0.05)
     assert stats["sqn"] == 0.0
     assert len(res["cashflows"]) == 2
+
+
+def test_comment_sanitization_magic_filter_and_breakeven_consistency():
+    deals = [
+        {"ticket": 1, "order_id": 1, "position_id": 0, "time": 1000, "time_msc": 1000000, "type": 2, "entry": 0, "profit": 1000.0, "swap": 0.0, "commission": 0.0, "symbol": ""},
+        {"ticket": 2, "order_id": 2, "position_id": 10, "time": 2000, "time_msc": 2000000, "type": 0, "entry": 1, "open_price": 1.10, "sl": 1.09, "price": 1.11, "profit": 20.0, "swap": 0.0, "commission": 0.0, "symbol": "EURUSD", "volume": 0.1, "comment": "[tp 1.11000]", "magic": 101},
+        {"ticket": 3, "order_id": 3, "position_id": 11, "time": 3000, "time_msc": 3000000, "type": 1, "entry": 1, "open_price": 1.10, "sl": 1.11, "price": 1.10, "profit": 0.0, "swap": 0.0, "commission": 0.0, "symbol": "EURUSD", "volume": 0.1, "comment": "[sl 1.10000]", "magic": 101},
+        {"ticket": 4, "order_id": 4, "position_id": 12, "time": 4000, "time_msc": 4000000, "type": 0, "entry": 1, "open_price": 1.10, "sl": 1.09, "price": 1.09, "profit": -10.0, "swap": 0.0, "commission": 0.0, "symbol": "EURUSD", "volume": 0.1, "comment": "London_Breakout", "magic": 202},
+    ]
+    res = process_portfolio_analytics(deals, {"login": 1, "balance": 1010.0, "equity": 1010.0})
+    assert res["available_comments"] == ["London_Breakout"]
+    assert res["available_magics"] == [101, 202]
+    assert res["stats"]["won_trades"] == 1
+    assert res["stats"]["lost_trades"] == 1
+    assert res["stats"]["breakeven_trades"] == 1
+    assert res["currency_summary"][0]["won_count"] == 1
+    assert res["currency_summary"][0]["lost_count"] == 1
+
+    res_magic = process_portfolio_analytics(deals, {"login": 1, "balance": 1010.0, "equity": 1010.0}, magic=202)
+    assert res_magic["stats"]["total_trades"] == 1
+    assert res_magic["stats"]["lost_trades"] == 1

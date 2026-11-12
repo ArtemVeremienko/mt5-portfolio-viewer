@@ -53,6 +53,7 @@ def init_db():
         open_time INTEGER,
         open_price REAL,
         comment TEXT,
+        magic INTEGER DEFAULT 0,
         risk_r REAL,
         r_multiple REAL,
         mae_price REAL DEFAULT 0.0,
@@ -78,6 +79,7 @@ def init_db():
         ("mfe_amount", "REAL DEFAULT 0.0"),
         ("mae_r", "REAL DEFAULT 0.0"),
         ("mfe_r", "REAL DEFAULT 0.0"),
+        ("magic", "INTEGER DEFAULT 0"),
     ]
     for col_name, col_def in new_cols:
         if col_name not in existing_cols:
@@ -173,11 +175,12 @@ def upsert_deals(deals: List[Dict[str, Any]]):
         deal_copy.setdefault("mfe_amount", 0.0)
         deal_copy.setdefault("mae_r", 0.0)
         deal_copy.setdefault("mfe_r", 0.0)
+        deal_copy.setdefault("magic", 0)
         normalized_deals.append(deal_copy)
 
     cursor.executemany("""
-    INSERT INTO deals (ticket, order_id, account_id, time, time_msc, type, entry, symbol, volume, price, profit, swap, commission, sl, tp, open_time, open_price, comment, risk_r, r_multiple, mae_price, mfe_price, mae_pips, mfe_pips, mae_amount, mfe_amount, mae_r, mfe_r)
-    VALUES (:ticket, :order_id, :account_id, :time, :time_msc, :type, :entry, :symbol, :volume, :price, :profit, :swap, :commission, :sl, :tp, :open_time, :open_price, :comment, :risk_r, :r_multiple, :mae_price, :mfe_price, :mae_pips, :mfe_pips, :mae_amount, :mfe_amount, :mae_r, :mfe_r)
+    INSERT INTO deals (ticket, order_id, account_id, time, time_msc, type, entry, symbol, volume, price, profit, swap, commission, sl, tp, open_time, open_price, comment, magic, risk_r, r_multiple, mae_price, mfe_price, mae_pips, mfe_pips, mae_amount, mfe_amount, mae_r, mfe_r)
+    VALUES (:ticket, :order_id, :account_id, :time, :time_msc, :type, :entry, :symbol, :volume, :price, :profit, :swap, :commission, :sl, :tp, :open_time, :open_price, :comment, :magic, :risk_r, :r_multiple, :mae_price, :mfe_price, :mae_pips, :mfe_pips, :mae_amount, :mfe_amount, :mae_r, :mfe_r)
     ON CONFLICT(ticket) DO UPDATE SET
         order_id = excluded.order_id,
         account_id = excluded.account_id,
@@ -196,6 +199,7 @@ def upsert_deals(deals: List[Dict[str, Any]]):
         open_time = excluded.open_time,
         open_price = excluded.open_price,
         comment = excluded.comment,
+        magic = excluded.magic,
         risk_r = excluded.risk_r,
         r_multiple = excluded.r_multiple,
         mae_price = excluded.mae_price,

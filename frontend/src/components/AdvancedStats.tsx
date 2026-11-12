@@ -220,14 +220,18 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
               <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Average Win:</span>
                 <span class="font-bold text-emerald-400 font-mono">
-                  {formatPipsOrMoney(s()?.avg_win_pips || 0, s()?.avg_win || 0)}
+                  {props.mode === 'r'
+                    ? `${(s()?.avg_win_r ?? 0) >= 0 ? '+' : ''}${(s()?.avg_win_r ?? 0).toFixed(2)}R`
+                    : formatPipsOrMoney(s()?.avg_win_pips || 0, s()?.avg_win || 0)}
                 </span>
               </div>
 
               <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                 <span class="text-slate-400 font-medium">Average Loss:</span>
                 <span class="font-bold text-rose-400 font-mono">
-                  -{Math.abs(s()?.avg_loss_pips || 0).toFixed(1)} pips / -{formatMoney(Math.abs(s()?.avg_loss || 0))}
+                  {props.mode === 'r'
+                    ? `${(s()?.avg_loss_r ?? 0).toFixed(2)}R`
+                    : `-${Math.abs(s()?.avg_loss_pips || 0).toFixed(1)} pips / -${formatMoney(Math.abs(s()?.avg_loss || 0))}`}
                 </span>
               </div>
 

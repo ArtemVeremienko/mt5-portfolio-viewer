@@ -381,7 +381,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           lineWidth: 2,
           priceFormat: { type: 'percent' },
           priceScaleId: 'right',
-          title: 'Equity Growth',
+          title: 'Intra-Trade Equity',
         });
         equityGrowthSeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.equity_growth_pct ?? d.growth_pct })));
         seriesList.push(equityGrowthSeries);
@@ -695,9 +695,9 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       {/* Top Header Controls: Views & Timeframe */}
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
         {/* Chart View Tabs */}
-        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto max-w-full whitespace-nowrap">
           <button
-            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
               activeTab() === 'growth' ? 'bg-slate-800 text-emerald-400 shadow' : 'text-slate-400 hover:text-white'
             }`}
             onClick={() => setActiveTab('growth')}
@@ -705,7 +705,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
             Growth (%)
           </button>
           <button
-            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
               activeTab() === 'balance' ? 'bg-slate-800 text-blue-400 shadow' : 'text-slate-400 hover:text-white'
             }`}
             onClick={() => setActiveTab('balance')}
@@ -713,7 +713,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
             Balance & Equity
           </button>
           <button
-            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
               activeTab() === 'profit' ? 'bg-slate-800 text-blue-400 shadow' : 'text-slate-400 hover:text-white'
             }`}
             onClick={() => setActiveTab('profit')}
@@ -721,7 +721,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
             Profit ($)
           </button>
           <button
-            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
               activeTab() === 'drawdown' ? 'bg-slate-800 text-rose-400 shadow' : 'text-slate-400 hover:text-white'
             }`}
             onClick={() => setActiveTab('drawdown')}
@@ -729,7 +729,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
             Drawdown (%)
           </button>
           <button
-            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            class={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
               activeTab() === 'r' ? 'bg-purple-900/50 text-purple-300 border border-purple-500/30 shadow' : 'text-purple-400/80 hover:text-purple-200'
             }`}
             onClick={() => setActiveTab('r')}
@@ -761,6 +761,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           {/* Toggles for Growth View */}
           <Show when={activeTab() === 'growth'}>
             <button
+              aria-pressed={showGrowth()}
               onClick={() => setShowGrowth(!showGrowth())}
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showGrowth()
@@ -773,7 +774,9 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
             </button>
 
             <button
+              aria-pressed={showEquityGrowth()}
               onClick={() => setShowEquityGrowth(!showEquityGrowth())}
+              title="Models worst intra-trade equity dip using MAE excursion"
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showEquityGrowth()
                   ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 font-semibold'
@@ -781,7 +784,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               }`}
             >
               <span class={`h-2 w-2 rounded-full ${showEquityGrowth() ? 'bg-amber-400' : 'bg-slate-600'}`}></span>
-              <span>Equity Growth (%)</span>
+              <span>Intra-Trade Equity (%)</span>
             </button>
 
             <button
