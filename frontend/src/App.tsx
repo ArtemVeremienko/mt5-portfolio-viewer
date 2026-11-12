@@ -38,7 +38,8 @@ export const App: Component = () => {
   const [isMt5Connected, setIsMt5Connected] = createSignal<boolean>(false);
   const [isWsConnected, setIsWsConnected] = createSignal<boolean>(false);
   const [isSyncing, setIsSyncing] = createSignal<boolean>(false);
-  const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'excursions' | 'calendar' | 'monthly' | 'advanced' | 'trades'>('overview');
+  const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'excursions' | 'calendar' | 'advanced' | 'trades'>('overview');
+  const [calendarSubTab, setCalendarSubTab] = createSignal<'monthly' | 'daily'>('monthly');
 
   let ws: WebSocket | null = null;
   let wsReconnectTimer: any = null;
@@ -203,9 +204,6 @@ export const App: Component = () => {
         onSelectAccount={handleSelectAccount}
         onSelectMode={(m) => {
           setMetricMode(m);
-          if (m === 'r' && mainTab() === 'overview') {
-            setMainTab('vantharp');
-          }
         }}
         onSelectTradeScope={(scope) => {
           setTradeScope(scope);
@@ -232,7 +230,7 @@ export const App: Component = () => {
           {/* Main Navigation Tabs */}
           <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl shadow-lg backdrop-blur-sm overflow-x-auto">
             <button
-              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              class={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 mainTab() === 'overview'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -240,11 +238,11 @@ export const App: Component = () => {
               onClick={() => setMainTab('overview')}
             >
               <LineChart size={15} />
-              <span>Performance Curves</span>
+              <span>Performance</span>
             </button>
 
             <button
-              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              class={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 mainTab() === 'vantharp'
                   ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/30'
                   : 'text-purple-400 hover:text-purple-200 hover:bg-purple-950/30'
@@ -252,11 +250,11 @@ export const App: Component = () => {
               onClick={() => setMainTab('vantharp')}
             >
               <Award size={15} />
-              <span>Dr. Van Tharp (R & SQN)</span>
+              <span>Van Tharp SQN</span>
             </button>
 
             <button
-              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              class={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 mainTab() === 'excursions'
                   ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-600/30'
                   : 'text-cyan-400 hover:text-cyan-200 hover:bg-cyan-950/30'
@@ -264,35 +262,23 @@ export const App: Component = () => {
               onClick={() => setMainTab('excursions')}
             >
               <Activity size={15} />
-              <span>Excursions (MAE / MFE)</span>
+              <span>MAE / MFE</span>
             </button>
 
             <button
-              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              class={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 mainTab() === 'calendar'
                   ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30'
                   : 'text-emerald-400 hover:text-emerald-200 hover:bg-emerald-950/30'
               }`}
               onClick={() => setMainTab('calendar')}
             >
-              <CalendarIcon size={15} />
-              <span>Calendar View</span>
-            </button>
-
-            <button
-              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                mainTab() === 'monthly'
-                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-600/30'
-                  : 'text-purple-400 hover:text-purple-200 hover:bg-purple-950/30'
-              }`}
-              onClick={() => setMainTab('monthly')}
-            >
               <CalendarDays size={15} />
-              <span>Monthly Analytics</span>
+              <span>Calendar & Periods</span>
             </button>
 
             <button
-              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              class={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 mainTab() === 'advanced'
                   ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-blue-400 hover:text-blue-200 hover:bg-blue-950/30'
@@ -300,11 +286,11 @@ export const App: Component = () => {
               onClick={() => setMainTab('advanced')}
             >
               <BarChart3 size={15} />
-              <span>Advanced Statistics</span>
+              <span>Advanced Stats</span>
             </button>
 
             <button
-              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              class={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 mainTab() === 'trades'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -312,7 +298,7 @@ export const App: Component = () => {
               onClick={() => setMainTab('trades')}
             >
               <Layers size={15} />
-              <span>Open & History Trades ({portfolioData()?.stats.total_trades || 0})</span>
+              <span>Trades ({portfolioData()?.stats.total_trades || 0})</span>
             </button>
           </div>
 
@@ -359,20 +345,52 @@ export const App: Component = () => {
             />
           </Show>
 
-          {/* Tab: Calendar View */}
+          {/* Tab: Calendar & Periods (Unified Monthly Analytics + Daily Calendar) */}
           <Show when={mainTab() === 'calendar'}>
-            <CalendarView
-              days={portfolioData()?.calendar_days || []}
-              mode={metricMode()}
-            />
-          </Show>
+            <div class="space-y-4">
+              {/* Periodic Sub-tab Switcher Bar */}
+              <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl shadow-md backdrop-blur-sm">
+                <button
+                  onClick={() => setCalendarSubTab('monthly')}
+                  class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    calendarSubTab() === 'monthly'
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-600/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <CalendarDays size={15} />
+                  <span>Monthly Analytics</span>
+                </button>
 
-          {/* Tab: Monthly Analytics */}
-          <Show when={mainTab() === 'monthly'}>
-            <MonthlyAnalytics
-              monthlyAnalytics={portfolioData()?.monthly_analytics || []}
-              mode={metricMode()}
-            />
+                <button
+                  onClick={() => setCalendarSubTab('daily')}
+                  class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    calendarSubTab() === 'daily'
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <CalendarIcon size={15} />
+                  <span>Daily Calendar</span>
+                </button>
+              </div>
+
+              {/* Sub-view 1: Monthly Analytics (4-Quadrant) */}
+              <Show when={calendarSubTab() === 'monthly'}>
+                <MonthlyAnalytics
+                  monthlyAnalytics={portfolioData()?.monthly_analytics || []}
+                  mode={metricMode()}
+                />
+              </Show>
+
+              {/* Sub-view 2: Daily Calendar */}
+              <Show when={calendarSubTab() === 'daily'}>
+                <CalendarView
+                  days={portfolioData()?.calendar_days || []}
+                  mode={metricMode()}
+                />
+              </Show>
+            </div>
           </Show>
 
           {/* Tab: Advanced Statistics */}

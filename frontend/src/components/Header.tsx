@@ -79,9 +79,10 @@ export const Header: Component<HeaderProps> = (props) => {
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
               }`}
               onClick={() => props.onSelectMode('currency')}
+              title="View metrics in Profit ($)"
             >
               <DollarSign size={14} />
-              <span>Profit ($)</span>
+              <span>$ Profit</span>
             </button>
             
             <button
@@ -91,9 +92,10 @@ export const Header: Component<HeaderProps> = (props) => {
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
               }`}
               onClick={() => props.onSelectMode('pct')}
+              title="View metrics in Percent Gain (%)"
             >
               <Percent size={14} />
-              <span>Gain (%)</span>
+              <span>% Gain</span>
             </button>
 
             <button
@@ -103,11 +105,12 @@ export const Header: Component<HeaderProps> = (props) => {
                   : 'text-purple-300 hover:text-purple-100 hover:bg-slate-900'
               }`}
               onClick={() => props.onSelectMode('r')}
+              title="View metrics in R-Multiple normalized units"
             >
               <TrendingUp size={14} />
-              <span>Van Tharp (R)</span>
-              <span class="text-[9px] bg-purple-950/80 text-purple-200 px-1 py-0.2 rounded border border-purple-500/30">
-                SQN
+              <span>R-Multiple</span>
+              <span class="text-[9px] bg-purple-950/80 text-purple-200 px-1 py-0.2 rounded border border-purple-500/30 font-mono">
+                1R
               </span>
             </button>
           </div>
