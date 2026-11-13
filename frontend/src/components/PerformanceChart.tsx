@@ -448,7 +448,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           color: '#f59e0b',
           lineWidth: 2,
           priceScaleId: 'right',
-          title: 'Equity',
+          title: 'Intra-Trade Equity',
         });
         equitySeries.setData(sortedData.map(d => ({ time: d.timestamp as any, value: d.equity })));
         seriesList.push(equitySeries);
@@ -818,7 +818,9 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
             </button>
 
             <button
+              aria-pressed={showEquity()}
               onClick={() => setShowEquity(!showEquity())}
+              title="Models worst intra-trade equity dip via MAE, ending at live account equity"
               class={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                 showEquity()
                   ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 font-semibold'
@@ -826,7 +828,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
               }`}
             >
               <span class={`h-2 w-2 rounded-full ${showEquity() ? 'bg-amber-400' : 'bg-slate-600'}`}></span>
-              <span>Equity</span>
+              <span>Intra-Trade Equity</span>
             </button>
 
             <button

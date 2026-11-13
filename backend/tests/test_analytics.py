@@ -262,3 +262,33 @@ def test_comment_sanitization_magic_filter_and_breakeven_consistency():
     res_magic = process_portfolio_analytics(deals, {"login": 1, "balance": 1010.0, "equity": 1010.0}, magic=202)
     assert res_magic["stats"]["total_trades"] == 1
     assert res_magic["stats"]["lost_trades"] == 1
+
+
+def test_live_now_curve_point_matches_floating_pnl():
+    deals = [
+        {"ticket": 1, "order_id": 1, "position_id": 0, "time": 1000, "time_msc": 1000000, "type": 2, "entry": 0, "profit": 1000.0, "swap": 0.0, "commission": 0.0, "symbol": ""},
+        {"ticket": 2, "order_id": 2, "position_id": 10, "time": 2000, "time_msc": 2000000, "type": 0, "entry": 1, "open_price": 1.10, "sl": 1.09, "price": 1.11, "profit": 50.0, "swap": 0.0, "commission": 0.0, "symbol": "EURUSD", "volume": 0.1, "mae_amount": -25.0},
+    ]
+    # PnL = 0 -> live Now point has equity == balance and no phantom bar
+    res_flat = process_portfolio_analytics(deals, {"login": 1, "balance": 1050.0, "equity": 1050.0})
+    assert len(res_flat["curves"]) == 3
+    # Trade point keeps intra-trade MAE dip
+    assert res_flat["curves"][1]["balance"] == 1050.0
+    assert res_flat["curves"][1]["equity"] == 975.0
+    # Live Now point matches Balance == Equity and zero change bar
+    assert res_flat["curves"][2]["balance"] == 1050.0
+    assert res_flat["curves"][2]["equity"] == 1050.0
+    assert res_flat["curves"][2]["change_amount"] == 0.0
+    assert res_flat["curves"][2]["change_pct"] == 0.0
+
+    # Floating PnL = -15 -> live Now point reflects floating PnL
+    res_float = process_portfolio_analytics(deals, {"login": 1, "balance": 1050.0, "equity": 1035.0})
+    assert res_float["curves"][-1]["balance"] == 1050.0
+    assert res_float["curves"][-1]["equity"] == 1035.0
+
+    # Filtered by symbol -> floating_pnl = 0.0; filtered with end_time -> no Now point
+    res_sym = process_portfolio_analytics(deals, {"login": 1, "balance": 1050.0, "equity": 1035.0}, symbol="EURUSD")
+    assert res_sym["curves"][-1]["equity"] == res_sym["curves"][-1]["balance"]
+
+    res_end = process_portfolio_analytics(deals, {"login": 1, "balance": 1050.0, "equity": 1035.0}, end_time=3000)
+    assert len(res_end["curves"]) == 2

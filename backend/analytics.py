@@ -1,5 +1,6 @@
 import math
 import re
+import time
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 import numpy as np
@@ -543,6 +544,53 @@ def process_portfolio_analytics(
             "change_pct": round(trade_chg_pct, 2),
             "change_amount": round(net_p, 2),
             "change_r": round(td["r_multiple"], 2)
+        })
+
+    # Append a live "Now" point when no end_time filter is active so the chart's
+    # current right-edge Equity reflects live account equity (Balance + floating PnL)
+    # rather than freezing on the last closed trade's worst intra-trade MAE dip.
+    if curves and end_time is None:
+        is_unfiltered = (
+            trade_scope == "all"
+            and start_time is None
+            and not sym_filter
+            and not dir_filter
+            and not cmt_filter
+            and magic is None
+        )
+        floating_pnl = 0.0
+        if is_unfiltered and current_account:
+            acc_bal = float(current_account.get("balance", 0.0) or 0.0)
+            acc_eq = float(current_account.get("equity", 0.0) or 0.0)
+            if acc_bal > 0 or acc_eq > 0:
+                floating_pnl = acc_eq - acc_bal
+
+        last_pt = curves[-1]
+        now_ts = max(int(time.time()), int(last_pt["timestamp"]) + 1)
+        live_bal = current_run_bal
+        live_eq = live_bal + floating_pnl
+        live_eq_twr = (
+            twr_factor * max(1e-6, live_eq / max(1.0, live_bal))
+            if abs(floating_pnl) > 1e-9 and live_bal > 0
+            else twr_factor
+        )
+        live_eq_growth_pct = (live_eq_twr - 1.0) * 100.0
+        live_dd_amount = max(0.0, peak_balance - live_eq)
+        live_dd_pct = (live_dd_amount / peak_balance * 100.0) if peak_balance > 0 else 0.0
+
+        curves.append({
+            "timestamp": now_ts,
+            "balance": round(live_bal, 2),
+            "equity": round(live_eq, 2),
+            "profit": last_pt["profit"],
+            "growth_pct": last_pt["growth_pct"],
+            "equity_growth_pct": round(live_eq_growth_pct, 2),
+            "drawdown_pct": round(live_dd_pct, 2),
+            "cumulative_r": last_pt["cumulative_r"],
+            "r_drawdown": last_pt["r_drawdown"],
+            "change_pct": 0.0,
+            "change_amount": 0.0,
+            "change_r": 0.0,
         })
 
     # Stats Summary
