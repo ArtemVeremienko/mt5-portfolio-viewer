@@ -17,6 +17,7 @@ import { ExcursionPanel } from './components/ExcursionPanel';
 import { CalendarView } from './components/CalendarView';
 import { AdvancedStats } from './components/AdvancedStats';
 import { MonthlyAnalytics } from './components/MonthlyAnalytics';
+import { getStorageItem, setStorageItem } from './utils/storage';
 import { 
   LineChart, 
   Award, 
@@ -53,11 +54,12 @@ export const App: Component = () => {
   const [fetchError, setFetchError] = createSignal<string | null>(null);
 
   // Configurable Prop Risk Guard limits (persisted in localStorage)
+  const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
   const [propDailyLimit, setPropDailyLimit] = createSignal<number>(
-    Number(localStorage.getItem('propDailyLimit') || '-5')
+    getStorageItem('propDailyLimit', -5, (v): v is number => isFiniteNumber(v) && v <= 0)
   );
   const [propMaxDdLimit, setPropMaxDdLimit] = createSignal<number>(
-    Number(localStorage.getItem('propMaxDdLimit') || '10')
+    getStorageItem('propMaxDdLimit', 10, (v): v is number => isFiniteNumber(v) && v > 0)
   );
   const [showPropConfig, setShowPropConfig] = createSignal<boolean>(false);
 
@@ -566,7 +568,7 @@ export const App: Component = () => {
                               const v = Number(e.currentTarget.value);
                               if (!isNaN(v) && v <= 0) {
                                 setPropDailyLimit(v);
-                                localStorage.setItem('propDailyLimit', String(v));
+                                setStorageItem('propDailyLimit', v);
                               }
                             }}
                             class="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-white"
@@ -585,7 +587,7 @@ export const App: Component = () => {
                               const v = Number(e.currentTarget.value);
                               if (!isNaN(v) && v > 0) {
                                 setPropMaxDdLimit(v);
-                                localStorage.setItem('propMaxDdLimit', String(v));
+                                setStorageItem('propMaxDdLimit', v);
                               }
                             }}
                             class="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-white"

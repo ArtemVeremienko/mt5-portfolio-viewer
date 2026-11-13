@@ -1,7 +1,75 @@
-import { Component, createMemo, createSignal, For, Show } from 'solid-js';
+import { Component, createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { TradeDeal, OpenPosition, MetricMode, TradeScope, CashflowItem } from '../types';
-import { Search, ArrowUpRight, ArrowDownRight, History, Download, NotebookPen, X, ArrowUpDown, Tag } from 'lucide-solid';
+import { Search, ArrowUpRight, ArrowDownRight, History, Download, NotebookPen, X, ArrowUpDown, Tag, SlidersHorizontal, RotateCcw } from 'lucide-solid';
+import { getStorageItem, setStorageItem } from '../utils/storage';
+
+type HistoryColumnKey =
+  | 'symbol'
+  | 'type'
+  | 'volume'
+  | 'open_time'
+  | 'close_time'
+  | 'duration'
+  | 'open_price'
+  | 'close_price'
+  | 'sl'
+  | 'tp'
+  | 'pips'
+  | 'swap'
+  | 'commission'
+  | 'mae'
+  | 'mfe'
+  | 'ticket'
+  | 'net_profit'
+  | 'r_multiple'
+  | 'comment'
+  | 'journal';
+
+interface HistoryColumnDef {
+  key: HistoryColumnKey;
+  label: string;
+  defaultVisible: boolean;
+}
+
+const HISTORY_COLUMNS: HistoryColumnDef[] = [
+  { key: 'symbol', label: 'Symbol', defaultVisible: true },
+  { key: 'type', label: 'Type', defaultVisible: true },
+  { key: 'volume', label: 'Lots', defaultVisible: true },
+  { key: 'open_time', label: 'Open Time', defaultVisible: true },
+  { key: 'close_time', label: 'Close Time', defaultVisible: false },
+  { key: 'duration', label: 'Dur.', defaultVisible: true },
+  { key: 'open_price', label: 'Open', defaultVisible: false },
+  { key: 'close_price', label: 'Close', defaultVisible: false },
+  { key: 'sl', label: 'SL', defaultVisible: false },
+  { key: 'tp', label: 'TP', defaultVisible: false },
+  { key: 'pips', label: 'Pips', defaultVisible: false },
+  { key: 'swap', label: 'Swap', defaultVisible: false },
+  { key: 'commission', label: 'Comm.', defaultVisible: false },
+  { key: 'mae', label: 'MAE', defaultVisible: false },
+  { key: 'mfe', label: 'MFE', defaultVisible: false },
+  { key: 'ticket', label: 'Ticket', defaultVisible: false },
+  { key: 'net_profit', label: 'Net Profit', defaultVisible: true },
+  { key: 'r_multiple', label: 'R-Multiple', defaultVisible: true },
+  { key: 'comment', label: 'Comment', defaultVisible: true },
+  { key: 'journal', label: 'Journal', defaultVisible: true },
+];
+
+const HISTORY_COLUMN_KEYS = new Set<HistoryColumnKey>(HISTORY_COLUMNS.map((c) => c.key));
+const DEFAULT_VISIBLE_COLUMNS: HistoryColumnKey[] = HISTORY_COLUMNS
+  .filter((c) => c.defaultVisible)
+  .map((c) => c.key);
+const VISIBLE_COLUMNS_STORAGE_KEY = 'tradesTable.visibleColumns';
+
+function isValidColumnList(val: unknown): val is HistoryColumnKey[] {
+  return (
+    Array.isArray(val) &&
+    val.length > 0 &&
+    val.every((item): item is HistoryColumnKey =>
+      typeof item === 'string' && HISTORY_COLUMN_KEYS.has(item as HistoryColumnKey)
+    )
+  );
+}
 
 interface TradesTableProps {
   openTrades: OpenPosition[];
@@ -29,7 +97,52 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
   const [setupTag, setSetupTag] = createSignal('');
   const [mistakeTag, setMistakeTag] = createSignal('');
   const [savingNote, setSavingNote] = createSignal(false);
+  const [visibleColumns, setVisibleColumns] = createSignal<HistoryColumnKey[]>(
+    getStorageItem(VISIBLE_COLUMNS_STORAGE_KEY, DEFAULT_VISIBLE_COLUMNS, isValidColumnList)
+  );
+  const [showColumnsMenu, setShowColumnsMenu] = createSignal(false);
+  let columnsMenuRef: HTMLDivElement | undefined;
   const pageSize = 20;
+
+  const isColVisible = (key: HistoryColumnKey) => visibleColumns().includes(key);
+
+  const toggleColumn = (key: HistoryColumnKey) => {
+    const current = visibleColumns();
+    let next: HistoryColumnKey[];
+    if (current.includes(key)) {
+      if (current.length <= 1) return; // Keep at least one column visible
+      next = current.filter((k) => k !== key);
+    } else {
+      const set = new Set([...current, key]);
+      next = HISTORY_COLUMNS.map((c) => c.key).filter((k) => set.has(k));
+    }
+    setVisibleColumns(next);
+    setStorageItem(VISIBLE_COLUMNS_STORAGE_KEY, next);
+  };
+
+  const resetColumns = () => {
+    setVisibleColumns(DEFAULT_VISIBLE_COLUMNS);
+    setStorageItem(VISIBLE_COLUMNS_STORAGE_KEY, DEFAULT_VISIBLE_COLUMNS);
+  };
+
+  onMount(() => {
+    const handlePointerDown = (e: MouseEvent) => {
+      if (showColumnsMenu() && columnsMenuRef && !columnsMenuRef.contains(e.target as Node)) {
+        setShowColumnsMenu(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showColumnsMenu()) {
+        setShowColumnsMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    onCleanup(() => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    });
+  });
 
   const openNoteEditor = (t: TradeDeal) => {
     setEditingTrade(t);
@@ -339,6 +452,68 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
           </div>
 
           <Show when={activeTab() === 'history'}>
+            <div class="relative" ref={columnsMenuRef}>
+              <button
+                onClick={() => setShowColumnsMenu((v) => !v)}
+                class={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
+                  showColumnsMenu()
+                    ? 'bg-blue-600/20 text-blue-300 border-blue-500/40'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                }`}
+                title="Configure visible Closed History columns"
+              >
+                <SlidersHorizontal size={13} class="text-blue-400" />
+                <span>Columns</span>
+                <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-900 text-slate-300 font-mono">
+                  {visibleColumns().length}/{HISTORY_COLUMNS.length}
+                </span>
+              </button>
+
+              <Show when={showColumnsMenu()}>
+                <div class="absolute right-0 mt-1.5 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2.5 z-50">
+                  <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                      Columns
+                    </span>
+                    <button
+                      onClick={resetColumns}
+                      class="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 font-medium"
+                      title="Restore default visible columns"
+                    >
+                      <RotateCcw size={11} />
+                      <span>Reset to Default</span>
+                    </button>
+                  </div>
+                  <div class="max-h-64 overflow-y-auto space-y-1 pr-1">
+                    <For each={HISTORY_COLUMNS}>
+                      {(col) => {
+                        const checked = () => isColVisible(col.key);
+                        const isLastVisible = () => checked() && visibleColumns().length <= 1;
+                        return (
+                          <label
+                            class={`flex items-center justify-between px-2 py-1 rounded-lg text-xs cursor-pointer transition-colors ${
+                              isLastVisible()
+                                ? 'opacity-60 cursor-not-allowed'
+                                : 'hover:bg-slate-800/80 text-slate-200'
+                            }`}
+                          >
+                            <span>{col.label}</span>
+                            <input
+                              type="checkbox"
+                              checked={checked()}
+                              disabled={isLastVisible()}
+                              onChange={() => toggleColumn(col.key)}
+                              class="accent-blue-500 rounded cursor-pointer"
+                            />
+                          </label>
+                        );
+                      }}
+                    </For>
+                  </div>
+                </div>
+              </Show>
+            </div>
+
             <button
               onClick={exportCsv}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition-colors"
@@ -383,42 +558,56 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
             <table class="w-full text-left text-xs">
               <thead>
                 <tr class="text-[11px] text-slate-400 border-b border-slate-800">
-                  <th class="py-2.5 px-2">Ticket</th>
-                  <th class="py-2.5 px-2">Open Time</th>
-                  <th class="py-2.5 px-2">
-                    <button onClick={() => toggleSort('time')} class="inline-flex items-center gap-1 hover:text-white">
-                      <span>Close Time</span><ArrowUpDown size={11} class={sortBy() === 'time' ? 'text-blue-400' : 'opacity-50'} />
-                    </button>
-                  </th>
-                  <th class="py-2.5 px-2">
-                    <button onClick={() => toggleSort('duration')} class="inline-flex items-center gap-1 hover:text-white">
-                      <span>Dur.</span><ArrowUpDown size={11} class={sortBy() === 'duration' ? 'text-blue-400' : 'opacity-50'} />
-                    </button>
-                  </th>
-                  <th class="py-2.5 px-2">Type</th>
-                  <th class="py-2.5 px-2">Symbol</th>
-                  <th class="py-2.5 px-2">
-                    <button onClick={() => toggleSort('volume')} class="inline-flex items-center gap-1 hover:text-white">
-                      <span>Lots</span><ArrowUpDown size={11} class={sortBy() === 'volume' ? 'text-blue-400' : 'opacity-50'} />
-                    </button>
-                  </th>
-                  <th class="py-2.5 px-2">Open</th>
-                  <th class="py-2.5 px-2">Close</th>
-                  <th class="py-2.5 px-2">SL</th>
-                  <th class="py-2.5 px-2">Swap</th>
-                  <th class="py-2.5 px-2">Comm.</th>
-                  <th class="py-2.5 px-2">
-                    <button onClick={() => toggleSort('profit')} class="inline-flex items-center gap-1 hover:text-white">
-                      <span>Net Profit</span><ArrowUpDown size={11} class={sortBy() === 'profit' ? 'text-blue-400' : 'opacity-50'} />
-                    </button>
-                  </th>
-                  <th class="py-2.5 px-2">Comment</th>
-                  <th class="py-2.5 px-2">Journal</th>
-                  <th class="py-2.5 px-2 text-right">
-                    <button onClick={() => toggleSort('r_multiple')} class="inline-flex items-center gap-1 hover:text-white ml-auto">
-                      <span>R-Multiple</span><ArrowUpDown size={11} class={sortBy() === 'r_multiple' ? 'text-purple-400' : 'opacity-50'} />
-                    </button>
-                  </th>
+                  <Show when={isColVisible('symbol')}><th class="py-2.5 px-2">Symbol</th></Show>
+                  <Show when={isColVisible('type')}><th class="py-2.5 px-2">Type</th></Show>
+                  <Show when={isColVisible('volume')}>
+                    <th class="py-2.5 px-2">
+                      <button onClick={() => toggleSort('volume')} class="inline-flex items-center gap-1 hover:text-white">
+                        <span>Lots</span><ArrowUpDown size={11} class={sortBy() === 'volume' ? 'text-blue-400' : 'opacity-50'} />
+                      </button>
+                    </th>
+                  </Show>
+                  <Show when={isColVisible('open_time')}><th class="py-2.5 px-2">Open Time</th></Show>
+                  <Show when={isColVisible('close_time')}>
+                    <th class="py-2.5 px-2">
+                      <button onClick={() => toggleSort('time')} class="inline-flex items-center gap-1 hover:text-white">
+                        <span>Close Time</span><ArrowUpDown size={11} class={sortBy() === 'time' ? 'text-blue-400' : 'opacity-50'} />
+                      </button>
+                    </th>
+                  </Show>
+                  <Show when={isColVisible('duration')}>
+                    <th class="py-2.5 px-2">
+                      <button onClick={() => toggleSort('duration')} class="inline-flex items-center gap-1 hover:text-white">
+                        <span>Dur.</span><ArrowUpDown size={11} class={sortBy() === 'duration' ? 'text-blue-400' : 'opacity-50'} />
+                      </button>
+                    </th>
+                  </Show>
+                  <Show when={isColVisible('open_price')}><th class="py-2.5 px-2">Open</th></Show>
+                  <Show when={isColVisible('close_price')}><th class="py-2.5 px-2">Close</th></Show>
+                  <Show when={isColVisible('sl')}><th class="py-2.5 px-2">SL</th></Show>
+                  <Show when={isColVisible('tp')}><th class="py-2.5 px-2">TP</th></Show>
+                  <Show when={isColVisible('pips')}><th class="py-2.5 px-2">Pips</th></Show>
+                  <Show when={isColVisible('swap')}><th class="py-2.5 px-2">Swap</th></Show>
+                  <Show when={isColVisible('commission')}><th class="py-2.5 px-2">Comm.</th></Show>
+                  <Show when={isColVisible('mae')}><th class="py-2.5 px-2">MAE</th></Show>
+                  <Show when={isColVisible('mfe')}><th class="py-2.5 px-2">MFE</th></Show>
+                  <Show when={isColVisible('ticket')}><th class="py-2.5 px-2">Ticket</th></Show>
+                  <Show when={isColVisible('net_profit')}>
+                    <th class="py-2.5 px-2">
+                      <button onClick={() => toggleSort('profit')} class="inline-flex items-center gap-1 hover:text-white">
+                        <span>Net Profit</span><ArrowUpDown size={11} class={sortBy() === 'profit' ? 'text-blue-400' : 'opacity-50'} />
+                      </button>
+                    </th>
+                  </Show>
+                  <Show when={isColVisible('r_multiple')}>
+                    <th class="py-2.5 px-2 text-right">
+                      <button onClick={() => toggleSort('r_multiple')} class="inline-flex items-center gap-1 hover:text-white ml-auto">
+                        <span>R-Multiple</span><ArrowUpDown size={11} class={sortBy() === 'r_multiple' ? 'text-purple-400' : 'opacity-50'} />
+                      </button>
+                    </th>
+                  </Show>
+                  <Show when={isColVisible('comment')}><th class="py-2.5 px-2">Comment</th></Show>
+                  <Show when={isColVisible('journal')}><th class="py-2.5 px-2">Journal</th></Show>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-800/60">
@@ -426,7 +615,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                   when={paginatedClosed().length > 0}
                   fallback={
                     <tr>
-                      <td colspan="16" class="py-8 text-center text-slate-500 text-xs">
+                      <td colspan={visibleColumns().length} class="py-8 text-center text-slate-500 text-xs">
                         No closed trades match your search or filters.
                       </td>
                     </tr>
@@ -437,60 +626,114 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                     const netVal = getNetProfit(t);
                     return (
                     <tr class="hover:bg-slate-800/30 transition-colors">
-                      <td class="py-2 px-2 text-slate-400 font-mono">#{t.ticket}</td>
-                      <td class="py-2 px-2 text-slate-400 font-mono text-[11px]">{formatTimestamp(t.open_time || 0)}</td>
-                      <td class="py-2 px-2 text-slate-300 font-mono text-[11px]">{formatTimestamp(t.time)}</td>
-                      <td class="py-2 px-2 text-slate-400 font-mono text-[11px]">{formatDuration(t.open_time, t.time)}</td>
-                      <td class="py-2 px-2 font-semibold">
-                        <span class={`px-1.5 py-0.5 rounded text-[10px] ${
-                          t.type === 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                        }`}>
-                          {t.type === 0 ? 'BUY' : 'SELL'}
-                        </span>
-                      </td>
-                      <td class="py-2 px-2 font-bold text-white font-mono">{t.symbol}</td>
-                      <td class="py-2 px-2 text-slate-300 font-mono">{t.volume.toFixed(2)}</td>
-                      <td class="py-2 px-2 text-slate-300 font-mono">{t.open_price}</td>
-                      <td class="py-2 px-2 text-slate-300 font-mono">{t.price}</td>
-                      <td class="py-2 px-2 text-slate-400 font-mono">{t.sl > 0 ? t.sl : '—'}</td>
-                      <td class="py-2 px-2 text-slate-400 font-mono">{(t.swap || 0).toFixed(2)}</td>
-                      <td class="py-2 px-2 text-slate-400 font-mono">{(t.commission || 0).toFixed(2)}</td>
-                      <td class="py-2 px-2 font-bold">
-                        <span class={netVal >= 0 ? 'text-emerald-400' : 'text-rose-400'} title={`Gross: ${t.profit.toFixed(2)}`}>
-                          {netVal >= 0 ? '+$' : '-$'}{Math.abs(netVal).toFixed(2)}
-                        </span>
-                      </td>
-                      <td class="py-2 px-2 text-slate-400 text-[11px] max-w-[120px] truncate" title={t.comment}>{t.comment || '—'}</td>
-                      <td class="py-2 px-2">
-                        <button
-                          onClick={() => openNoteEditor(t)}
-                          class={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border transition-colors ${
-                            t.note || t.setup_tag || t.mistake_tag
-                              ? 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
-                              : 'bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white'
-                          }`}
-                          title={t.note || 'Add journal note or tags'}
-                        >
-                          <NotebookPen size={11} />
-                          <span>{t.setup_tag || (t.note ? 'Note' : 'Log')}</span>
-                        </button>
-                      </td>
-                      <td class="py-2 px-2 text-right font-bold">
-                        <span 
-                          title={
-                            t.risk_source === 'sl'
-                              ? `1R = $${(t.risk_r || 0.20).toFixed(2)} (Initial SL: ${t.sl_diff_pts || '—'} pts)`
-                              : `1R = $${(t.risk_r || 0.20).toFixed(2)} (1% Account Risk Model)`
-                          }
-                          class={`px-2 py-0.5 rounded text-xs font-mono cursor-help ${
-                            t.r_multiple > 0
-                              ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
-                              : (t.r_multiple < 0 ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30' : 'text-slate-400')
-                          }`}
-                        >
-                          {t.r_multiple > 0 ? `+${t.r_multiple.toFixed(2)}R` : `${t.r_multiple.toFixed(2)}R`}
-                        </span>
-                      </td>
+                      <Show when={isColVisible('symbol')}>
+                        <td class="py-2 px-2 font-bold text-white font-mono">{t.symbol}</td>
+                      </Show>
+                      <Show when={isColVisible('type')}>
+                        <td class="py-2 px-2 font-semibold">
+                          <span class={`px-1.5 py-0.5 rounded text-[10px] ${
+                            t.type === 0 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                          }`}>
+                            {t.type === 0 ? 'BUY' : 'SELL'}
+                          </span>
+                        </td>
+                      </Show>
+                      <Show when={isColVisible('volume')}>
+                        <td class="py-2 px-2 text-slate-300 font-mono">{t.volume.toFixed(2)}</td>
+                      </Show>
+                      <Show when={isColVisible('open_time')}>
+                        <td class="py-2 px-2 text-slate-400 font-mono text-[11px]">{formatTimestamp(t.open_time || 0)}</td>
+                      </Show>
+                      <Show when={isColVisible('close_time')}>
+                        <td class="py-2 px-2 text-slate-300 font-mono text-[11px]">{formatTimestamp(t.time)}</td>
+                      </Show>
+                      <Show when={isColVisible('duration')}>
+                        <td class="py-2 px-2 text-slate-400 font-mono text-[11px]">{formatDuration(t.open_time, t.time)}</td>
+                      </Show>
+                      <Show when={isColVisible('open_price')}>
+                        <td class="py-2 px-2 text-slate-300 font-mono">{t.open_price}</td>
+                      </Show>
+                      <Show when={isColVisible('close_price')}>
+                        <td class="py-2 px-2 text-slate-300 font-mono">{t.price}</td>
+                      </Show>
+                      <Show when={isColVisible('sl')}>
+                        <td class="py-2 px-2 text-slate-400 font-mono">{t.sl > 0 ? t.sl : '—'}</td>
+                      </Show>
+                      <Show when={isColVisible('tp')}>
+                        <td class="py-2 px-2 text-slate-400 font-mono">{t.tp > 0 ? t.tp : '—'}</td>
+                      </Show>
+                      <Show when={isColVisible('pips')}>
+                        <td class="py-2 px-2 text-slate-300 font-mono">
+                          {t.pips != null ? (t.pips > 0 ? `+${t.pips.toFixed(1)}` : t.pips.toFixed(1)) : '—'}
+                        </td>
+                      </Show>
+                      <Show when={isColVisible('swap')}>
+                        <td class="py-2 px-2 text-slate-400 font-mono">{(t.swap || 0).toFixed(2)}</td>
+                      </Show>
+                      <Show when={isColVisible('commission')}>
+                        <td class="py-2 px-2 text-slate-400 font-mono">{(t.commission || 0).toFixed(2)}</td>
+                      </Show>
+                      <Show when={isColVisible('mae')}>
+                        <td class="py-2 px-2 text-rose-400 font-mono">
+                          {props.mode === 'r'
+                            ? (t.mae_r != null ? `-${Math.abs(t.mae_r).toFixed(2)}R` : '—')
+                            : (t.mae_amount != null ? `-$${Math.abs(t.mae_amount).toFixed(2)}` : '—')}
+                        </td>
+                      </Show>
+                      <Show when={isColVisible('mfe')}>
+                        <td class="py-2 px-2 text-emerald-400 font-mono">
+                          {props.mode === 'r'
+                            ? (t.mfe_r != null ? `+${Math.abs(t.mfe_r).toFixed(2)}R` : '—')
+                            : (t.mfe_amount != null ? `+$${Math.abs(t.mfe_amount).toFixed(2)}` : '—')}
+                        </td>
+                      </Show>
+                      <Show when={isColVisible('ticket')}>
+                        <td class="py-2 px-2 text-slate-400 font-mono">#{t.ticket}</td>
+                      </Show>
+                      <Show when={isColVisible('net_profit')}>
+                        <td class="py-2 px-2 font-bold">
+                          <span class={netVal >= 0 ? 'text-emerald-400' : 'text-rose-400'} title={`Gross: ${t.profit.toFixed(2)}`}>
+                            {netVal >= 0 ? '+$' : '-$'}{Math.abs(netVal).toFixed(2)}
+                          </span>
+                        </td>
+                      </Show>
+                      <Show when={isColVisible('r_multiple')}>
+                        <td class="py-2 px-2 text-right font-bold">
+                          <span
+                            title={
+                              t.risk_source === 'sl'
+                                ? `1R = $${(t.risk_r || 0.20).toFixed(2)} (Initial SL: ${t.sl_diff_pts || '—'} pts)`
+                                : `1R = $${(t.risk_r || 0.20).toFixed(2)} (1% Account Risk Model)`
+                            }
+                            class={`px-2 py-0.5 rounded text-xs font-mono cursor-help ${
+                              t.r_multiple > 0
+                                ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                                : (t.r_multiple < 0 ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30' : 'text-slate-400')
+                            }`}
+                          >
+                            {t.r_multiple > 0 ? `+${t.r_multiple.toFixed(2)}R` : `${t.r_multiple.toFixed(2)}R`}
+                          </span>
+                        </td>
+                      </Show>
+                      <Show when={isColVisible('comment')}>
+                        <td class="py-2 px-2 text-slate-400 text-[11px] max-w-[120px] truncate" title={t.comment}>{t.comment || '—'}</td>
+                      </Show>
+                      <Show when={isColVisible('journal')}>
+                        <td class="py-2 px-2">
+                          <button
+                            onClick={() => openNoteEditor(t)}
+                            class={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border transition-colors ${
+                              t.note || t.setup_tag || t.mistake_tag
+                                ? 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                                : 'bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white'
+                            }`}
+                            title={t.note || 'Add journal note or tags'}
+                          >
+                            <NotebookPen size={11} />
+                            <span>{t.setup_tag || (t.note ? 'Note' : 'Log')}</span>
+                          </button>
+                        </td>
+                      </Show>
                     </tr>
                   );}}
                 </For>
