@@ -20,6 +20,9 @@ from backend.database import (
     append_snapshot,
     get_trade_notes,
     upsert_trade_note,
+    get_deal_by_ticket,
+    get_trade_candles,
+    upsert_trade_candles,
 )
 from backend.mt5_service import mt5_service
 from backend.analytics import process_portfolio_analytics
@@ -185,6 +188,50 @@ def save_trade_note(payload: TradeNotePayload):
         updated_at=int(time.time()),
     )
     return {"status": "ok", "ticket": payload.ticket}
+
+
+@app.get("/api/trades/{ticket}/candles")
+def get_trade_mtf_candles_endpoint(ticket: int):
+    cached = get_trade_candles(ticket)
+    if all(cached.get(tf) for tf in ("h1", "m5", "m1")):
+        return {
+            "ticket": ticket,
+            "h1": cached["h1"],
+            "m5": cached["m5"],
+            "m1": cached["m1"],
+            "cached": True,
+            "mt5_connected": mt5_service.is_connected(),
+        }
+
+    deal = get_deal_by_ticket(ticket)
+    if not deal:
+        raise HTTPException(status_code=404, detail="Trade not found")
+
+    open_time = int(deal.get("open_time") or deal.get("time") or 0)
+    close_time = int(deal.get("time") or open_time)
+    mt5_connected = mt5_service.is_connected()
+
+    if mt5_connected:
+        fetched = mt5_service.get_trade_mtf_candles(
+            symbol=deal.get("symbol", ""),
+            open_time=open_time,
+            close_time=close_time,
+        )
+        now_ts = int(time.time())
+        for tf in ("h1", "m5", "m1"):
+            bars = fetched.get(tf) or []
+            if bars:
+                upsert_trade_candles(ticket, tf, bars, cached_at=now_ts)
+                cached[tf] = bars
+
+    return {
+        "ticket": ticket,
+        "h1": cached.get("h1", []),
+        "m5": cached.get("m5", []),
+        "m1": cached.get("m1", []),
+        "cached": False,
+        "mt5_connected": mt5_connected,
+    }
 
 
 @app.get("/api/portfolio")

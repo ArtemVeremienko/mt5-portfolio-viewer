@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import json
 from typing import List, Dict, Any, Optional
 
 DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
@@ -112,6 +113,16 @@ def init_db():
         management_grade TEXT DEFAULT '',
         updated_at INTEGER DEFAULT 0,
         FOREIGN KEY(account_id) REFERENCES accounts(login)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS trade_candles (
+        ticket INTEGER NOT NULL,
+        timeframe TEXT NOT NULL,
+        candles_json TEXT NOT NULL,
+        cached_at INTEGER DEFAULT 0,
+        PRIMARY KEY (ticket, timeframe)
     )
     """)
 
@@ -317,5 +328,42 @@ def upsert_trade_note(
         management_grade = excluded.management_grade,
         updated_at = excluded.updated_at
     """, (ticket, account_id, note, setup_tag, mistake_tag, exit_tag, entry_grade, execution_grade, management_grade, updated_at))
+    conn.commit()
+    conn.close()
+
+
+def get_deal_by_ticket(ticket: int) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM deals WHERE ticket = ?", (ticket,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_trade_candles(ticket: int) -> Dict[str, List[Dict[str, Any]]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT timeframe, candles_json FROM trade_candles WHERE ticket = ?", (ticket,))
+    result: Dict[str, List[Dict[str, Any]]] = {}
+    for row in cursor.fetchall():
+        try:
+            result[row["timeframe"]] = json.loads(row["candles_json"])
+        except Exception:
+            result[row["timeframe"]] = []
+    conn.close()
+    return result
+
+
+def upsert_trade_candles(ticket: int, timeframe: str, candles: List[Dict[str, Any]], cached_at: int = 0):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO trade_candles (ticket, timeframe, candles_json, cached_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(ticket, timeframe) DO UPDATE SET
+        candles_json = excluded.candles_json,
+        cached_at = excluded.cached_at
+    """, (ticket, timeframe, json.dumps(candles), cached_at))
     conn.commit()
     conn.close()

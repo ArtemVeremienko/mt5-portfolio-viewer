@@ -1,8 +1,9 @@
 import { Component, createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { TradeDeal, OpenPosition, MetricMode, TradeScope, CashflowItem, TradeGrade } from '../types';
-import { Search, ArrowUpRight, ArrowDownRight, History, Download, NotebookPen, X, ArrowUpDown, Tag, SlidersHorizontal, RotateCcw } from 'lucide-solid';
+import { Search, ArrowUpRight, ArrowDownRight, History, Download, NotebookPen, X, ArrowUpDown, Tag, SlidersHorizontal, RotateCcw, CandlestickChart } from 'lucide-solid';
 import { getStorageItem, setStorageItem } from '../utils/storage';
+import { TradeChartGrid } from './TradeChartGrid';
 
 type HistoryColumnKey =
   | 'symbol'
@@ -918,14 +919,14 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                         <td class="py-2 px-2">
                           <button
                             onClick={() => openNoteEditor(t)}
-                            class={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border transition-colors ${
+                            class={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] border transition-colors ${
                               isTradeReviewed(t)
                                 ? 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
                                 : 'bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white'
                             }`}
-                            title={t.note || 'Add journal note, grades, or tags'}
+                            title={t.note || 'Inspect H1 / M5 / M1 charts & journal'}
                           >
-                            <NotebookPen size={11} />
+                            <CandlestickChart size={11} class="text-blue-400" />
                             <span>{t.setup_tag || (t.note ? 'Note' : (isTradeReviewed(t) ? 'Graded' : 'Log'))}</span>
                           </button>
                         </td>
@@ -1203,22 +1204,28 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
         </div>
       </Show>
 
-      {/* Trade Journal Note Modal (Portal ensures true viewport centering) */}
+      {/* Trade Journal & MTF Chart Modal (Portal ensures true viewport centering) */}
       <Show when={editingTrade()}>
         {(t) => (
           <Portal>
-            <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-              <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
+            <div class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+              <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-6xl max-h-[92vh] overflow-y-auto shadow-2xl space-y-4">
               <div class="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div>
-                  <h4 class="text-sm font-bold text-white">Trade Journal — #{t().ticket}</h4>
-                  <p class="text-[11px] text-slate-400 font-mono">{t().symbol} • {t().type === 0 ? 'BUY' : 'SELL'} • {t().r_multiple >= 0 ? '+' : ''}{t().r_multiple.toFixed(2)}R</p>
+                  <h4 class="text-sm font-bold text-white">Trade Review &amp; Journal — #{t().ticket}</h4>
+                  <p class="text-[11px] text-slate-400 font-mono">
+                    {t().symbol} • {t().type === 0 ? 'BUY' : 'SELL'} • {t().volume.toFixed(2)} lots • Entry {t().open_price} → Exit {t().price} • {t().r_multiple >= 0 ? '+' : ''}{t().r_multiple.toFixed(2)}R
+                  </p>
                 </div>
                 <button onClick={() => setEditingTrade(null)} class="text-slate-400 hover:text-white">
                   <X size={16} />
                 </button>
               </div>
-              <div class="space-y-3 text-xs">
+              <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                <div class="lg:col-span-7">
+                  <TradeChartGrid trade={t()} />
+                </div>
+                <div class="lg:col-span-5 space-y-3 text-xs">
                 <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-2.5">
                   <div class="flex items-center justify-between">
                     <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Trade Grading</span>
@@ -1411,6 +1418,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                     class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-blue-500"
                   />
                 </div>
+              </div>
               </div>
               <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
