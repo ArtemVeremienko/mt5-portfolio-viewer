@@ -1,6 +1,6 @@
 import { Component, createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { TradeDeal, OpenPosition, MetricMode, TradeScope, CashflowItem } from '../types';
+import { TradeDeal, OpenPosition, MetricMode, TradeScope, CashflowItem, TradeGrade } from '../types';
 import { Search, ArrowUpRight, ArrowDownRight, History, Download, NotebookPen, X, ArrowUpDown, Tag, SlidersHorizontal, RotateCcw } from 'lucide-solid';
 import { getStorageItem, setStorageItem } from '../utils/storage';
 
@@ -24,6 +24,8 @@ type HistoryColumnKey =
   | 'net_profit'
   | 'r_multiple'
   | 'comment'
+  | 'exit_tag'
+  | 'grade'
   | 'journal';
 
 interface HistoryColumnDef {
@@ -52,8 +54,70 @@ const HISTORY_COLUMNS: HistoryColumnDef[] = [
   { key: 'net_profit', label: 'Net Profit', defaultVisible: true },
   { key: 'r_multiple', label: 'R-Multiple', defaultVisible: true },
   { key: 'comment', label: 'Comment', defaultVisible: true },
+  { key: 'exit_tag', label: 'Exit', defaultVisible: true },
+  { key: 'grade', label: 'Grade', defaultVisible: true },
   { key: 'journal', label: 'Journal', defaultVisible: true },
 ];
+
+const EXIT_TAG_PRESETS = ['TP', 'SL', 'BE', 'Trailing', 'Manual'] as const;
+const ENTRY_MISTAKE_PRESETS = ['FOMO', 'Chased', 'Early Entry', 'Counter-Trend', 'No Setup'] as const;
+const EXIT_MISTAKE_PRESETS = ['Moved SL', 'Early Exit', 'Hesitated', 'Oversized', 'Revenge'] as const;
+
+function parseTagList(raw?: string): string[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(',')) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+const GRADE_OPTIONS: Array<'A' | 'B' | 'C'> = ['A', 'B', 'C'];
+const GRADE_SCORE: Record<'A' | 'B' | 'C', number> = { A: 3, B: 2, C: 1 };
+
+function isRatedGrade(g?: string): g is 'A' | 'B' | 'C' {
+  return g === 'A' || g === 'B' || g === 'C';
+}
+
+function computeOverallGrade(
+  entry?: TradeGrade,
+  execution?: TradeGrade,
+  management?: TradeGrade
+): TradeGrade {
+  if (!isRatedGrade(entry) || !isRatedGrade(execution) || !isRatedGrade(management)) {
+    return '';
+  }
+  const avg = (GRADE_SCORE[entry] + GRADE_SCORE[execution] + GRADE_SCORE[management]) / 3;
+  if (avg >= 2.5) return 'A';
+  if (avg >= 1.5) return 'B';
+  return 'C';
+}
+
+function gradeBadgeClass(grade: TradeGrade): string {
+  if (grade === 'A') return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+  if (grade === 'B') return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+  if (grade === 'C') return 'bg-rose-500/15 text-rose-400 border-rose-500/30';
+  return 'bg-slate-800/70 text-slate-400 border-slate-700';
+}
+
+function isTradeReviewed(t: TradeDeal): boolean {
+  return Boolean(
+    t.note ||
+      t.setup_tag ||
+      t.mistake_tag ||
+      t.exit_tag ||
+      t.entry_grade ||
+      t.execution_grade ||
+      t.management_grade
+  );
+}
 
 const HISTORY_COLUMN_KEYS = new Set<HistoryColumnKey>(HISTORY_COLUMNS.map((c) => c.key));
 const DEFAULT_VISIBLE_COLUMNS: HistoryColumnKey[] = HISTORY_COLUMNS
@@ -88,6 +152,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
   );
   const [searchQuery, setSearchQuery] = createSignal('');
   const [outcomeFilter, setOutcomeFilter] = createSignal<'all' | 'winners' | 'losers' | 'unreviewed'>('all');
+  const [gradeFilter, setGradeFilter] = createSignal<'all' | 'A' | 'B' | 'C'>('all');
   const [tagFilter, setTagFilter] = createSignal<string>('');
   const [sortBy, setSortBy] = createSignal<'time' | 'duration' | 'volume' | 'profit' | 'r_multiple'>('time');
   const [sortDir, setSortDir] = createSignal<'asc' | 'desc'>('desc');
@@ -95,7 +160,12 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
   const [editingTrade, setEditingTrade] = createSignal<TradeDeal | null>(null);
   const [noteText, setNoteText] = createSignal('');
   const [setupTag, setSetupTag] = createSignal('');
-  const [mistakeTag, setMistakeTag] = createSignal('');
+  const [exitTag, setExitTag] = createSignal('');
+  const [mistakeTags, setMistakeTags] = createSignal<string[]>([]);
+  const [customMistakeInput, setCustomMistakeInput] = createSignal('');
+  const [entryGrade, setEntryGrade] = createSignal<TradeGrade>('');
+  const [executionGrade, setExecutionGrade] = createSignal<TradeGrade>('');
+  const [managementGrade, setManagementGrade] = createSignal<TradeGrade>('');
   const [savingNote, setSavingNote] = createSignal(false);
   const [visibleColumns, setVisibleColumns] = createSignal<HistoryColumnKey[]>(
     getStorageItem(VISIBLE_COLUMNS_STORAGE_KEY, DEFAULT_VISIBLE_COLUMNS, isValidColumnList)
@@ -144,11 +214,46 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     });
   });
 
+  const usedSetupTags = createMemo(() => {
+    const seen = new Map<string, string>();
+    for (const t of props.closedTrades) {
+      const s = (t.setup_tag || '').trim();
+      if (s && !seen.has(s.toLowerCase())) {
+        seen.set(s.toLowerCase(), s);
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+  });
+
+  const toggleMistakeTag = (tag: string) => {
+    const key = tag.trim().toLowerCase();
+    if (!key) return;
+    setMistakeTags((prev) => {
+      const exists = prev.some((t) => t.toLowerCase() === key);
+      return exists ? prev.filter((t) => t.toLowerCase() !== key) : [...prev, tag.trim()];
+    });
+  };
+
+  const addCustomMistakeTag = () => {
+    const raw = customMistakeInput().trim();
+    if (!raw) return;
+    for (const part of parseTagList(raw)) {
+      const key = part.toLowerCase();
+      setMistakeTags((prev) => (prev.some((t) => t.toLowerCase() === key) ? prev : [...prev, part]));
+    }
+    setCustomMistakeInput('');
+  };
+
   const openNoteEditor = (t: TradeDeal) => {
     setEditingTrade(t);
     setNoteText(t.note || '');
     setSetupTag(t.setup_tag || '');
-    setMistakeTag(t.mistake_tag || '');
+    setExitTag(t.exit_tag || '');
+    setMistakeTags(parseTagList(t.mistake_tag));
+    setCustomMistakeInput('');
+    setEntryGrade(t.entry_grade || '');
+    setExecutionGrade(t.execution_grade || '');
+    setManagementGrade(t.management_grade || '');
   };
 
   const saveNote = async () => {
@@ -164,7 +269,11 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
           account_id: t.account_id,
           note: noteText(),
           setup_tag: setupTag(),
-          mistake_tag: mistakeTag(),
+          exit_tag: exitTag().trim(),
+          mistake_tag: mistakeTags().join(', '),
+          entry_grade: entryGrade(),
+          execution_grade: executionGrade(),
+          management_grade: managementGrade(),
         }),
       });
       if (res.ok) {
@@ -203,17 +312,24 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
           String(t.ticket).includes(q) ||
           (t.comment || '').toUpperCase().includes(q) ||
           (t.setup_tag || '').toUpperCase().includes(q) ||
+          (t.exit_tag || '').toUpperCase().includes(q) ||
           (t.mistake_tag || '').toUpperCase().includes(q);
         if (!hit) return false;
       }
       const net = getNetProfit(t);
       if (outcome === 'winners' && net <= 0) return false;
       if (outcome === 'losers' && net >= 0) return false;
-      if (outcome === 'unreviewed' && (t.note || t.setup_tag || t.mistake_tag)) return false;
+      if (outcome === 'unreviewed' && isTradeReviewed(t)) return false;
+      const gFilter = gradeFilter();
+      if (gFilter !== 'all') {
+        const overall = computeOverallGrade(t.entry_grade, t.execution_grade, t.management_grade);
+        if (overall !== gFilter) return false;
+      }
       if (tag) {
         const sTag = (t.setup_tag || '').trim().toLowerCase();
-        const mTag = (t.mistake_tag || '').trim().toLowerCase();
-        if (sTag !== tag && mTag !== tag) return false;
+        const eTag = (t.exit_tag || '').trim().toLowerCase();
+        const mTags = parseTagList(t.mistake_tag).map((m) => m.toLowerCase());
+        if (sTag !== tag && eTag !== tag && !mTags.includes(tag)) return false;
       }
       return true;
     });
@@ -235,36 +351,54 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
   };
 
   const tagAnalytics = createMemo(() => {
-    type TagRow = { tag: string; kind: 'setup' | 'mistake'; trades: number; won: number; totalR: number; totalProfit: number };
+    type TagRow = { tag: string; kind: 'setup' | 'mistake' | 'exit'; trades: number; won: number; totalR: number; totalProfit: number };
     const map = new Map<string, TagRow>();
+    const bump = (kind: TagRow['kind'], label: string, net: number, rMult: number) => {
+      const key = `${kind}:${label.toLowerCase()}`;
+      const cur = map.get(key) || { tag: label, kind, trades: 0, won: 0, totalR: 0, totalProfit: 0 };
+      cur.trades += 1;
+      if (net > 0) cur.won += 1;
+      cur.totalR += rMult;
+      cur.totalProfit += net;
+      map.set(key, cur);
+    };
     for (const t of props.closedTrades) {
       const net = getNetProfit(t);
+      const rMult = t.r_multiple || 0;
       const sTag = (t.setup_tag || '').trim();
-      const mTag = (t.mistake_tag || '').trim();
-      if (sTag) {
-        const key = `setup:${sTag.toLowerCase()}`;
-        const cur = map.get(key) || { tag: sTag, kind: 'setup', trades: 0, won: 0, totalR: 0, totalProfit: 0 };
-        cur.trades += 1;
-        if (net > 0) cur.won += 1;
-        cur.totalR += t.r_multiple || 0;
-        cur.totalProfit += net;
-        map.set(key, cur);
-      }
-      if (mTag) {
-        const key = `mistake:${mTag.toLowerCase()}`;
-        const cur = map.get(key) || { tag: mTag, kind: 'mistake', trades: 0, won: 0, totalR: 0, totalProfit: 0 };
-        cur.trades += 1;
-        if (net > 0) cur.won += 1;
-        cur.totalR += t.r_multiple || 0;
-        cur.totalProfit += net;
-        map.set(key, cur);
+      const eTag = (t.exit_tag || '').trim();
+      if (sTag) bump('setup', sTag, net, rMult);
+      if (eTag) bump('exit', eTag, net, rMult);
+      for (const mTag of parseTagList(t.mistake_tag)) {
+        bump('mistake', mTag, net, rMult);
       }
     }
     const all = Array.from(map.values()).sort((a, b) => b.trades - a.trades);
     return {
       setups: all.filter(x => x.kind === 'setup'),
+      exits: all.filter(x => x.kind === 'exit'),
       mistakes: all.filter(x => x.kind === 'mistake'),
     };
+  });
+
+  const gradeAnalytics = createMemo(() => {
+    type GradeRow = { grade: 'A' | 'B' | 'C'; trades: number; won: number; totalR: number; totalProfit: number };
+    const map: Record<'A' | 'B' | 'C', GradeRow> = {
+      A: { grade: 'A', trades: 0, won: 0, totalR: 0, totalProfit: 0 },
+      B: { grade: 'B', trades: 0, won: 0, totalR: 0, totalProfit: 0 },
+      C: { grade: 'C', trades: 0, won: 0, totalR: 0, totalProfit: 0 },
+    };
+    for (const t of props.closedTrades) {
+      const overall = computeOverallGrade(t.entry_grade, t.execution_grade, t.management_grade);
+      if (!isRatedGrade(overall)) continue;
+      const net = getNetProfit(t);
+      const cur = map[overall];
+      cur.trades += 1;
+      if (net > 0) cur.won += 1;
+      cur.totalR += t.r_multiple || 0;
+      cur.totalProfit += net;
+    }
+    return GRADE_OPTIONS.map((g) => map[g]).filter((r) => r.trades > 0);
   });
 
   const paginatedClosed = () => {
@@ -299,7 +433,8 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
       'Ticket', 'OpenTimeUTC', 'CloseTimeUTC', 'Duration', 'Type', 'Symbol',
       'Lots', 'OpenPrice', 'ClosePrice', 'SL', 'TP', 'Pips', 'GrossProfit', 'Swap',
       'Commission', 'NetProfit', 'Risk1R', 'RMultiple', 'MAE_Amt', 'MFE_Amt',
-      'SetupTag', 'MistakeTag', 'Note', 'Comment'
+      'EntryGrade', 'ExecutionGrade', 'ManagementGrade', 'OverallGrade',
+      'SetupTag', 'ExitTag', 'MistakeTag', 'Note', 'Comment'
     ];
     const escape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [
@@ -325,7 +460,12 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
         t.r_multiple.toFixed(2),
         (t.mae_amount || 0).toFixed(2),
         (t.mfe_amount || 0).toFixed(2),
+        t.entry_grade || '',
+        t.execution_grade || '',
+        t.management_grade || '',
+        computeOverallGrade(t.entry_grade, t.execution_grade, t.management_grade),
         t.setup_tag || '',
+        t.exit_tag || '',
         t.mistake_tag || '',
         t.note || '',
         t.comment || ''
@@ -544,6 +684,20 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                   {o}
                 </button>
               ))}
+              <span class="mx-1 text-slate-700">|</span>
+              <span class="text-slate-500 font-medium mr-0.5">Grade:</span>
+              {(['all', 'A', 'B', 'C'] as const).map((g) => (
+                <button
+                  onClick={() => { setGradeFilter(g); setPage(1); }}
+                  class={`px-2 py-1 rounded-lg font-medium border transition-colors ${
+                    gradeFilter() === g
+                      ? (g === 'all' ? 'bg-blue-600/20 text-blue-300 border-blue-500/40' : gradeBadgeClass(g))
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                >
+                  {g === 'all' ? 'All' : g}
+                </button>
+              ))}
               <Show when={tagFilter()}>
                 <button
                   onClick={() => { setTagFilter(''); setPage(1); }}
@@ -607,6 +761,8 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                     </th>
                   </Show>
                   <Show when={isColVisible('comment')}><th class="py-2.5 px-2">Comment</th></Show>
+                  <Show when={isColVisible('exit_tag')}><th class="py-2.5 px-2">Exit</th></Show>
+                  <Show when={isColVisible('grade')}><th class="py-2.5 px-2">Grade</th></Show>
                   <Show when={isColVisible('journal')}><th class="py-2.5 px-2">Journal</th></Show>
                 </tr>
               </thead>
@@ -718,19 +874,59 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                       <Show when={isColVisible('comment')}>
                         <td class="py-2 px-2 text-slate-400 text-[11px] max-w-[120px] truncate" title={t.comment}>{t.comment || '—'}</td>
                       </Show>
+                      <Show when={isColVisible('exit_tag')}>
+                        <td class="py-2 px-2">
+                          <button
+                            onClick={() => openNoteEditor(t)}
+                            class={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                              t.exit_tag
+                                ? 'bg-sky-500/15 text-sky-300 border-sky-500/30 hover:bg-sky-500/25'
+                                : 'bg-slate-800/40 text-slate-500 border-slate-800 hover:text-slate-300'
+                            }`}
+                            title={t.exit_tag ? `Exit: ${t.exit_tag}` : 'Set exit tag'}
+                          >
+                            {t.exit_tag || '—'}
+                          </button>
+                        </td>
+                      </Show>
+                      <Show when={isColVisible('grade')}>
+                        <td class="py-2 px-2">
+                          {(() => {
+                            const hasAny = Boolean(t.entry_grade || t.execution_grade || t.management_grade);
+                            const overall = computeOverallGrade(t.entry_grade, t.execution_grade, t.management_grade);
+                            const sub = `${t.entry_grade || '—'}/${t.execution_grade || '—'}/${t.management_grade || '—'}`;
+                            return (
+                              <button
+                                onClick={() => openNoteEditor(t)}
+                                class={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono border transition-colors ${
+                                  hasAny
+                                    ? gradeBadgeClass(overall)
+                                    : 'bg-slate-800/40 text-slate-500 border-slate-800 hover:text-slate-300'
+                                }`}
+                                title={`Entry: ${t.entry_grade || 'Unrated'} | Execution: ${t.execution_grade || 'Unrated'} | Management: ${t.management_grade || 'Unrated'}`}
+                              >
+                                <Show when={hasAny} fallback={<span>—</span>}>
+                                  <span class="font-bold">{overall || '?'}</span>
+                                  <span class="opacity-80">({sub})</span>
+                                </Show>
+                              </button>
+                            );
+                          })()}
+                        </td>
+                      </Show>
                       <Show when={isColVisible('journal')}>
                         <td class="py-2 px-2">
                           <button
                             onClick={() => openNoteEditor(t)}
                             class={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border transition-colors ${
-                              t.note || t.setup_tag || t.mistake_tag
+                              isTradeReviewed(t)
                                 ? 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
                                 : 'bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white'
                             }`}
-                            title={t.note || 'Add journal note or tags'}
+                            title={t.note || 'Add journal note, grades, or tags'}
                           >
                             <NotebookPen size={11} />
-                            <span>{t.setup_tag || (t.note ? 'Note' : 'Log')}</span>
+                            <span>{t.setup_tag || (t.note ? 'Note' : (isTradeReviewed(t) ? 'Graded' : 'Log'))}</span>
                           </button>
                         </td>
                       </Show>
@@ -874,6 +1070,74 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
       <Show when={activeTab() === 'playbook'}>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-blue-400">Grade Breakdown</h4>
+            <Show
+              when={gradeAnalytics().length > 0}
+              fallback={<p class="text-xs text-slate-500 py-4 text-center">No fully graded trades yet. Rate Entry, Execution &amp; Management in Journal.</p>}
+            >
+              <div class="space-y-1.5">
+                <For each={gradeAnalytics()}>
+                  {(row) => {
+                    const wr = (row.won / Math.max(1, row.trades)) * 100;
+                    const expR = row.totalR / Math.max(1, row.trades);
+                    return (
+                      <button
+                        onClick={() => { setGradeFilter(row.grade); setActiveTab('history'); setPage(1); }}
+                        class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs transition-colors"
+                      >
+                        <div class="text-left flex items-center gap-2.5">
+                          <span class={`px-2 py-0.5 rounded font-mono font-bold border text-[11px] ${gradeBadgeClass(row.grade)}`}>
+                            {row.grade}
+                          </span>
+                          <div class="text-[10px] text-slate-400 font-mono">
+                            {row.trades} trades • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R
+                          </div>
+                        </div>
+                        <div class="text-right font-mono">
+                          <div class={`font-bold ${row.totalR >= 0 ? 'text-purple-300' : 'text-rose-400'}`}>{row.totalR >= 0 ? '+' : ''}{row.totalR.toFixed(2)}R</div>
+                          <div class={`text-[10px] ${row.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{row.totalProfit >= 0 ? '+$' : '-$'}{Math.abs(row.totalProfit).toFixed(2)}</div>
+                        </div>
+                      </button>
+                    );
+                  }}
+                </For>
+              </div>
+            </Show>
+          </div>
+
+          <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-sky-400">Exit Breakdown</h4>
+            <Show
+              when={tagAnalytics().exits.length > 0}
+              fallback={<p class="text-xs text-slate-500 py-4 text-center">No exit tags logged yet. Set Exit (TP, SL, BE, Trailing, Manual) in Journal.</p>}
+            >
+              <div class="space-y-1.5">
+                <For each={tagAnalytics().exits}>
+                  {(row) => {
+                    const wr = (row.won / Math.max(1, row.trades)) * 100;
+                    const expR = row.totalR / Math.max(1, row.trades);
+                    return (
+                      <button
+                        onClick={() => { setTagFilter(row.tag); setActiveTab('history'); setPage(1); }}
+                        class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs transition-colors"
+                      >
+                        <div class="text-left">
+                          <div class="font-semibold text-white">{row.tag}</div>
+                          <div class="text-[10px] text-slate-400 font-mono">{row.trades} trades • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R</div>
+                        </div>
+                        <div class="text-right font-mono">
+                          <div class={`font-bold ${row.totalR >= 0 ? 'text-purple-300' : 'text-rose-400'}`}>{row.totalR >= 0 ? '+' : ''}{row.totalR.toFixed(2)}R</div>
+                          <div class={`text-[10px] ${row.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{row.totalProfit >= 0 ? '+$' : '-$'}{Math.abs(row.totalProfit).toFixed(2)}</div>
+                        </div>
+                      </button>
+                    );
+                  }}
+                </For>
+              </div>
+            </Show>
+          </div>
+
+          <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
             <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-400">Setup Playbook</h4>
             <Show
               when={tagAnalytics().setups.length > 0}
@@ -955,6 +1219,48 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                 </button>
               </div>
               <div class="space-y-3 text-xs">
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-2.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Trade Grading</span>
+                    {(() => {
+                      const overall = computeOverallGrade(entryGrade(), executionGrade(), managementGrade());
+                      return (
+                        <span class={`px-2 py-0.5 rounded text-[11px] font-mono font-bold border ${gradeBadgeClass(overall)}`}>
+                          {overall ? `Overall: ${overall}` : 'Overall: —'}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <div class="space-y-2">
+                    {[
+                      { label: 'Entry', value: entryGrade, setter: setEntryGrade },
+                      { label: 'Execution', value: executionGrade, setter: setExecutionGrade },
+                      { label: 'Position Mgmt', value: managementGrade, setter: setManagementGrade },
+                    ].map((dim) => (
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-slate-300">{dim.label}</span>
+                        <div class="flex items-center gap-1">
+                          {GRADE_OPTIONS.map((g) => {
+                            const active = () => dim.value() === g;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => dim.setter(active() ? '' : g)}
+                                class={`w-7 h-6 rounded-md font-mono font-bold text-[11px] border transition-colors ${
+                                  active()
+                                    ? gradeBadgeClass(g)
+                                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                                }`}
+                              >
+                                {g}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 <div>
                   <label class="block text-slate-400 mb-1">Setup Tag</label>
                   <input
@@ -964,16 +1270,136 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                     onInput={(e) => setSetupTag(e.currentTarget.value)}
                     class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-blue-500"
                   />
+                  <Show when={usedSetupTags().length > 0}>
+                    <div class="flex flex-wrap gap-1.5 mt-1.5">
+                      <For each={usedSetupTags()}>
+                        {(tag) => (
+                          <button
+                            type="button"
+                            onClick={() => setSetupTag(setupTag().trim().toLowerCase() === tag.toLowerCase() ? '' : tag)}
+                            class={`px-2 py-0.5 rounded-md text-[11px] border transition-colors ${
+                              setupTag().trim().toLowerCase() === tag.toLowerCase()
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                            }`}
+                          >
+                            {tag}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
                 </div>
+
                 <div>
-                  <label class="block text-slate-400 mb-1">Mistake / Execution Tag</label>
+                  <label class="block text-slate-400 mb-1">Exit Tag</label>
+                  <div class="flex flex-wrap gap-1.5 mb-1.5">
+                    {EXIT_TAG_PRESETS.map((preset) => {
+                      const active = () => exitTag().trim().toLowerCase() === preset.toLowerCase();
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setExitTag(active() ? '' : preset)}
+                          class={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+                            active()
+                              ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <input
                     type="text"
-                    placeholder="e.g. Moved SL, FOMO, Early Exit, Clean"
-                    value={mistakeTag()}
-                    onInput={(e) => setMistakeTag(e.currentTarget.value)}
-                    class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-blue-500"
+                    placeholder="Or custom exit reason..."
+                    value={exitTag()}
+                    onInput={(e) => setExitTag(e.currentTarget.value)}
+                    class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500"
                   />
+                </div>
+
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <label class="text-slate-400">Mistake Tags</label>
+                    <Show when={mistakeTags().length > 0}>
+                      <button
+                        type="button"
+                        onClick={() => setMistakeTags([])}
+                        class="text-[10px] text-slate-500 hover:text-rose-400"
+                      >
+                        Clear ({mistakeTags().length})
+                      </button>
+                    </Show>
+                  </div>
+
+                  {[
+                    { group: 'Entry', presets: ENTRY_MISTAKE_PRESETS },
+                    { group: 'Exit / Mgmt', presets: EXIT_MISTAKE_PRESETS },
+                  ].map((g) => (
+                    <div class="space-y-1">
+                      <span class="block text-[10px] uppercase tracking-wider text-slate-500">{g.group}</span>
+                      <div class="flex flex-wrap gap-1.5">
+                        {g.presets.map((preset) => {
+                          const active = () => mistakeTags().some((t) => t.toLowerCase() === preset.toLowerCase());
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => toggleMistakeTag(preset)}
+                              class={`px-2 py-0.5 rounded-md text-[11px] border transition-colors ${
+                                active()
+                                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                              }`}
+                            >
+                              {preset}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+
+                  <Show when={mistakeTags().some((t) => !ENTRY_MISTAKE_PRESETS.some((p) => p.toLowerCase() === t.toLowerCase()) && !EXIT_MISTAKE_PRESETS.some((p) => p.toLowerCase() === t.toLowerCase()))}>
+                    <div class="flex flex-wrap gap-1.5 pt-0.5">
+                      <For each={mistakeTags().filter((t) => !ENTRY_MISTAKE_PRESETS.some((p) => p.toLowerCase() === t.toLowerCase()) && !EXIT_MISTAKE_PRESETS.some((p) => p.toLowerCase() === t.toLowerCase()))}>
+                        {(customTag) => (
+                          <button
+                            type="button"
+                            onClick={() => toggleMistakeTag(customTag)}
+                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                          >
+                            <span>{customTag}</span>
+                            <X size={10} />
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+
+                  <div class="flex gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="Add custom mistake tag..."
+                      value={customMistakeInput()}
+                      onInput={(e) => setCustomMistakeInput(e.currentTarget.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addCustomMistakeTag();
+                        }
+                      }}
+                      class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={addCustomMistakeTag}
+                      class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium border border-slate-700"
+                    >
+                      + Add
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label class="block text-slate-400 mb-1">Journal Notes</label>

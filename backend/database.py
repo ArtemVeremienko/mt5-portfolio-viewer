@@ -106,10 +106,24 @@ def init_db():
         note TEXT DEFAULT '',
         setup_tag TEXT DEFAULT '',
         mistake_tag TEXT DEFAULT '',
+        exit_tag TEXT DEFAULT '',
+        entry_grade TEXT DEFAULT '',
+        execution_grade TEXT DEFAULT '',
+        management_grade TEXT DEFAULT '',
         updated_at INTEGER DEFAULT 0,
         FOREIGN KEY(account_id) REFERENCES accounts(login)
     )
     """)
+
+    existing_note_cols = [row[1] for row in cursor.execute("PRAGMA table_info(trade_notes)").fetchall()]
+    for col_name, col_def in [
+        ("exit_tag", "TEXT DEFAULT ''"),
+        ("entry_grade", "TEXT DEFAULT ''"),
+        ("execution_grade", "TEXT DEFAULT ''"),
+        ("management_grade", "TEXT DEFAULT ''"),
+    ]:
+        if col_name not in existing_note_cols:
+            cursor.execute(f"ALTER TABLE trade_notes ADD COLUMN {col_name} {col_def}")
 
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_acc_time ON deals(account_id, time)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_acc_time ON equity_snapshots(account_id, timestamp)")
@@ -267,23 +281,41 @@ def append_snapshot(account_id: int, snapshot: Dict[str, Any]):
 def get_trade_notes(account_id: int) -> Dict[int, Dict[str, Any]]:
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT ticket, note, setup_tag, mistake_tag, updated_at FROM trade_notes WHERE account_id = ?", (account_id,))
+    cursor.execute(
+        "SELECT ticket, note, setup_tag, mistake_tag, exit_tag, entry_grade, execution_grade, management_grade, updated_at FROM trade_notes WHERE account_id = ?",
+        (account_id,),
+    )
     rows = {int(r["ticket"]): dict(r) for r in cursor.fetchall()}
     conn.close()
     return rows
 
 
-def upsert_trade_note(ticket: int, account_id: int, note: str, setup_tag: str = "", mistake_tag: str = "", updated_at: int = 0):
+def upsert_trade_note(
+    ticket: int,
+    account_id: int,
+    note: str,
+    setup_tag: str = "",
+    mistake_tag: str = "",
+    exit_tag: str = "",
+    entry_grade: str = "",
+    execution_grade: str = "",
+    management_grade: str = "",
+    updated_at: int = 0,
+):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-    INSERT INTO trade_notes (ticket, account_id, note, setup_tag, mistake_tag, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO trade_notes (ticket, account_id, note, setup_tag, mistake_tag, exit_tag, entry_grade, execution_grade, management_grade, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(ticket) DO UPDATE SET
         note = excluded.note,
         setup_tag = excluded.setup_tag,
         mistake_tag = excluded.mistake_tag,
+        exit_tag = excluded.exit_tag,
+        entry_grade = excluded.entry_grade,
+        execution_grade = excluded.execution_grade,
+        management_grade = excluded.management_grade,
         updated_at = excluded.updated_at
-    """, (ticket, account_id, note, setup_tag, mistake_tag, updated_at))
+    """, (ticket, account_id, note, setup_tag, mistake_tag, exit_tag, entry_grade, execution_grade, management_grade, updated_at))
     conn.commit()
     conn.close()

@@ -150,12 +150,24 @@ def trigger_sync():
         "is_mt5_connected": mt5_service.is_connected()
     }
 
+VALID_GRADES = {"A", "B", "C"}
+
+
+def _normalize_grade(value: str) -> str:
+    v = (value or "").strip().upper()
+    return v if v in VALID_GRADES else ""
+
+
 class TradeNotePayload(BaseModel):
     ticket: int
     account_id: int
     note: str = ""
     setup_tag: str = ""
     mistake_tag: str = ""
+    exit_tag: str = ""
+    entry_grade: str = ""
+    execution_grade: str = ""
+    management_grade: str = ""
 
 
 @app.post("/api/trades/note")
@@ -166,6 +178,10 @@ def save_trade_note(payload: TradeNotePayload):
         note=payload.note,
         setup_tag=payload.setup_tag,
         mistake_tag=payload.mistake_tag,
+        exit_tag=payload.exit_tag.strip(),
+        entry_grade=_normalize_grade(payload.entry_grade),
+        execution_grade=_normalize_grade(payload.execution_grade),
+        management_grade=_normalize_grade(payload.management_grade),
         updated_at=int(time.time()),
     )
     return {"status": "ok", "ticket": payload.ticket}
@@ -247,6 +263,10 @@ def get_portfolio(
             t["note"] = n.get("note", "")
             t["setup_tag"] = n.get("setup_tag", "")
             t["mistake_tag"] = n.get("mistake_tag", "")
+            t["exit_tag"] = n.get("exit_tag", "")
+            t["entry_grade"] = n.get("entry_grade", "")
+            t["execution_grade"] = n.get("execution_grade", "")
+            t["management_grade"] = n.get("management_grade", "")
     return analytics_result
 
 @app.get("/api/trades/open")
