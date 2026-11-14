@@ -1,7 +1,7 @@
 import { Component, createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { TradeDeal, OpenPosition, MetricMode, TradeScope, CashflowItem, TradeGrade } from '../types';
-import { Search, ArrowUpRight, ArrowDownRight, History, Download, NotebookPen, X, ArrowUpDown, Tag, SlidersHorizontal, RotateCcw, CandlestickChart } from 'lucide-solid';
+import { Search, ArrowUpRight, ArrowDownRight, History, Download, X, ArrowUpDown, Tag, SlidersHorizontal, RotateCcw, CandlestickChart } from 'lucide-solid';
 import { getStorageItem, setStorageItem } from '../utils/storage';
 import { TradeChartGrid } from './TradeChartGrid';
 

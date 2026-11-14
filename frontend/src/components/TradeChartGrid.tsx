@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
+import { Component, createEffect, createSignal, onCleanup, Show } from 'solid-js';
 import {
   createChart,
   createSeriesMarkers,
@@ -45,9 +45,18 @@ interface CandlePaneProps {
   spanClass?: string;
 }
 
+function getNetProfit(t: TradeDeal): number {
+  return t.net_profit !== undefined ? t.net_profit : t.profit + (t.swap || 0) + (t.commission || 0);
+}
+
 function findBarTime(bars: OhlcBar[], targetTs: number, tfSeconds: number): UTCTimestamp | null {
   if (!bars.length || !targetTs) return null;
-  // Exact bucket match or latest bar whose open time <= targetTs
+  if (targetTs < bars[0].time) {
+    return bars[0].time - targetTs <= tfSeconds * 2 ? (bars[0].time as UTCTimestamp) : null;
+  }
+  if (targetTs > bars[bars.length - 1].time + tfSeconds * 2) {
+    return null;
+  }
   let best = bars[0].time;
   for (const b of bars) {
     if (b.time <= targetTs) {
@@ -56,29 +65,43 @@ function findBarTime(bars: OhlcBar[], targetTs: number, tfSeconds: number): UTCT
       break;
     }
   }
-  // If targetTs is slightly before the first bar, clamp to first bar if within 2 bars
-  if (targetTs < bars[0].time && bars[0].time - targetTs <= tfSeconds * 2) {
-    best = bars[0].time;
-  }
   return best as UTCTimestamp;
 }
 
 const CandlePane: Component<CandlePaneProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
   let chart: IChartApi | undefined;
+  let ro: ResizeObserver | undefined;
+  let disposed = false;
 
-  const renderChart = () => {
-    if (!containerRef) return;
+  const cleanupChart = () => {
+    ro?.disconnect();
+    ro = undefined;
     if (chart) {
       chart.remove();
       chart = undefined;
     }
+  };
+
+  const renderChart = () => {
+    if (disposed || !containerRef) return;
+    cleanupChart();
 
     const bars = props.bars;
     if (!bars || bars.length === 0) return;
 
     const width = containerRef.clientWidth || 320;
     const height = containerRef.clientHeight || 220;
+
+    ro = new ResizeObserver(() => {
+      if (chart && containerRef) {
+        chart.applyOptions({
+          width: containerRef.clientWidth,
+          height: containerRef.clientHeight,
+        });
+      }
+    });
+    ro.observe(containerRef);
 
     chart = createChart(containerRef, {
       width,
@@ -117,8 +140,7 @@ const CandlePane: Component<CandlePaneProps> = (props) => {
     if (entryBarTime !== null && exitBarTime !== null) {
       const minT = Math.min(entryBarTime as number, exitBarTime as number);
       const maxT = Math.max(entryBarTime as number, exitBarTime as number);
-      const net = t.net_profit !== undefined ? t.net_profit : t.profit + (t.swap || 0) + (t.commission || 0);
-      const bandColor = net >= 0 ? 'rgba(16, 185, 129, 0.10)' : 'rgba(244, 63, 94, 0.10)';
+      const bandColor = getNetProfit(t) >= 0 ? 'rgba(16, 185, 129, 0.10)' : 'rgba(244, 63, 94, 0.10)';
       const inRangeBars = bars.filter((b) => b.time >= minT && b.time <= maxT);
 
       if (inRangeBars.length >= 2) {
@@ -193,10 +215,9 @@ const CandlePane: Component<CandlePaneProps> = (props) => {
     }
 
     if (t.price > 0) {
-      const net = t.net_profit !== undefined ? t.net_profit : t.profit + (t.swap || 0) + (t.commission || 0);
       candleSeries.createPriceLine({
         price: t.price,
-        color: net >= 0 ? '#10b981' : '#f43f5e',
+        color: getNetProfit(t) >= 0 ? '#10b981' : '#f43f5e',
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: false,
@@ -265,23 +286,9 @@ const CandlePane: Component<CandlePaneProps> = (props) => {
     chart.timeScale().fitContent();
   };
 
-  onMount(() => {
-    const ro = new ResizeObserver(() => {
-      if (chart && containerRef) {
-        chart.applyOptions({
-          width: containerRef.clientWidth,
-          height: containerRef.clientHeight,
-        });
-      }
-    });
-    if (containerRef) ro.observe(containerRef);
-    onCleanup(() => {
-      ro.disconnect();
-      if (chart) {
-        chart.remove();
-        chart = undefined;
-      }
-    });
+  onCleanup(() => {
+    disposed = true;
+    cleanupChart();
   });
 
   createEffect(() => {
@@ -320,27 +327,30 @@ export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
     const ticket = props.trade.ticket;
     if (!ticket) return;
 
-    let cancelled = false;
+    const controller = new AbortController();
+    setData(null);
     setLoading(true);
     setError('');
 
-    fetch(`/api/trades/${ticket}/candles`)
+    fetch(`/api/trades/${ticket}/candles`, { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return (await res.json()) as CandlesResponse;
       })
       .then((json) => {
-        if (!cancelled) setData(json);
+        if (!controller.signal.aborted) setData(json);
       })
       .catch((err) => {
-        if (!cancelled) setError(String(err));
+        if (!controller.signal.aborted && err?.name !== 'AbortError') {
+          setError(String(err));
+        }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
 
     onCleanup(() => {
-      cancelled = true;
+      controller.abort();
     });
   });
 
@@ -349,10 +359,7 @@ export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
     return Boolean(d && (d.h1.length > 0 || d.m5.length > 0 || d.m1.length > 0));
   };
 
-  const netProfit = () => {
-    const t = props.trade;
-    return t.net_profit !== undefined ? t.net_profit : t.profit + (t.swap || 0) + (t.commission || 0);
-  };
+  const netProfit = () => getNetProfit(props.trade);
 
   return (
     <div class="space-y-2.5">

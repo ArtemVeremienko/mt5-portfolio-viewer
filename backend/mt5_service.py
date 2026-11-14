@@ -637,6 +637,7 @@ class MT5Service:
         bars_before: int = 80,
         bars_after: int = 30,
         max_bars: int = 2500,
+        timeframes: Optional[List[str]] = None,
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Fetches H1, M5, and M1 OHLC candles around a trade's open/close window."""
         result: Dict[str, List[Dict[str, Any]]] = {"h1": [], "m5": [], "m1": []}
@@ -648,6 +649,10 @@ class MT5Service:
             "m5": (mt5.TIMEFRAME_M5, 300),
             "m1": (mt5.TIMEFRAME_M1, 60),
         }
+        target_keys = [k for k in (timeframes or ["h1", "m5", "m1"]) if k in tf_map]
+        if not target_keys:
+            return result
+
         end_ts = max(int(open_time), int(close_time or open_time))
 
         try:
@@ -655,7 +660,8 @@ class MT5Service:
         except Exception:
             pass
 
-        for key, (tf, sec) in tf_map.items():
+        for key in target_keys:
+            tf, sec = tf_map[key]
             try:
                 from_ts = max(0, int(open_time) - bars_before * sec)
                 to_ts = end_ts + bars_after * sec

@@ -334,36 +334,42 @@ def upsert_trade_note(
 
 def get_deal_by_ticket(ticket: int) -> Optional[Dict[str, Any]]:
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM deals WHERE ticket = ?", (ticket,))
-    row = cursor.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM deals WHERE ticket = ?", (ticket,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def get_trade_candles(ticket: int) -> Dict[str, List[Dict[str, Any]]]:
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT timeframe, candles_json FROM trade_candles WHERE ticket = ?", (ticket,))
-    result: Dict[str, List[Dict[str, Any]]] = {}
-    for row in cursor.fetchall():
-        try:
-            result[row["timeframe"]] = json.loads(row["candles_json"])
-        except Exception:
-            result[row["timeframe"]] = []
-    conn.close()
-    return result
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT timeframe, candles_json FROM trade_candles WHERE ticket = ?", (ticket,))
+        result: Dict[str, List[Dict[str, Any]]] = {}
+        for row in cursor.fetchall():
+            try:
+                result[row["timeframe"]] = json.loads(row["candles_json"])
+            except json.JSONDecodeError:
+                result[row["timeframe"]] = []
+        return result
+    finally:
+        conn.close()
 
 
 def upsert_trade_candles(ticket: int, timeframe: str, candles: List[Dict[str, Any]], cached_at: int = 0):
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-    INSERT INTO trade_candles (ticket, timeframe, candles_json, cached_at)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(ticket, timeframe) DO UPDATE SET
-        candles_json = excluded.candles_json,
-        cached_at = excluded.cached_at
-    """, (ticket, timeframe, json.dumps(candles), cached_at))
-    conn.commit()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO trade_candles (ticket, timeframe, candles_json, cached_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(ticket, timeframe) DO UPDATE SET
+            candles_json = excluded.candles_json,
+            cached_at = excluded.cached_at
+        """, (ticket, timeframe, json.dumps(candles), cached_at))
+        conn.commit()
+    finally:
+        conn.close()
