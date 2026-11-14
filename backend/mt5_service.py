@@ -629,4 +629,64 @@ class MT5Service:
 
         return deals
 
+    def get_trade_mtf_candles(
+        self,
+        symbol: str,
+        open_time: int,
+        close_time: int,
+        bars_before: int = 80,
+        bars_after: int = 30,
+        max_bars: int = 2500,
+        timeframes: Optional[List[str]] = None,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Fetches H1, M5, and M1 OHLC candles around a trade's open/close window."""
+        result: Dict[str, List[Dict[str, Any]]] = {"h1": [], "m5": [], "m1": []}
+        if not symbol or open_time <= 0 or not self.is_connected():
+            return result
+
+        tf_map = {
+            "h1": (mt5.TIMEFRAME_H1, 3600),
+            "m5": (mt5.TIMEFRAME_M5, 300),
+            "m1": (mt5.TIMEFRAME_M1, 60),
+        }
+        target_keys = [k for k in (timeframes or ["h1", "m5", "m1"]) if k in tf_map]
+        if not target_keys:
+            return result
+
+        end_ts = max(int(open_time), int(close_time or open_time))
+
+        try:
+            mt5.symbol_select(symbol, True)
+        except Exception:
+            pass
+
+        for key in target_keys:
+            tf, sec = tf_map[key]
+            try:
+                from_ts = max(0, int(open_time) - bars_before * sec)
+                to_ts = end_ts + bars_after * sec
+                from_dt = datetime.fromtimestamp(from_ts, tz=timezone.utc)
+                to_dt = datetime.fromtimestamp(to_ts, tz=timezone.utc)
+                rates = mt5.copy_rates_range(symbol, tf, from_dt, to_dt)
+                if rates is None or len(rates) == 0:
+                    continue
+                bars = [
+                    {
+                        "time": int(r["time"]),
+                        "open": float(r["open"]),
+                        "high": float(r["high"]),
+                        "low": float(r["low"]),
+                        "close": float(r["close"]),
+                    }
+                    for r in rates
+                ]
+                if len(bars) > max_bars:
+                    bars = bars[-max_bars:]
+                result[key] = bars
+            except Exception as e:
+                print(f"[MT5Service] Error fetching {key.upper()} rates for {symbol}: {e}")
+
+        return result
+
+
 mt5_service = MT5Service()

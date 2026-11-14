@@ -20,6 +20,9 @@ from backend.database import (
     append_snapshot,
     get_trade_notes,
     upsert_trade_note,
+    get_deal_by_ticket,
+    get_trade_candles,
+    upsert_trade_candles,
 )
 from backend.mt5_service import mt5_service
 from backend.analytics import process_portfolio_analytics
@@ -150,12 +153,24 @@ def trigger_sync():
         "is_mt5_connected": mt5_service.is_connected()
     }
 
+VALID_GRADES = {"A", "B", "C"}
+
+
+def _normalize_grade(value: str) -> str:
+    v = (value or "").strip().upper()
+    return v if v in VALID_GRADES else ""
+
+
 class TradeNotePayload(BaseModel):
     ticket: int
     account_id: int
     note: str = ""
     setup_tag: str = ""
     mistake_tag: str = ""
+    exit_tag: str = ""
+    entry_grade: str = ""
+    execution_grade: str = ""
+    management_grade: str = ""
 
 
 @app.post("/api/trades/note")
@@ -166,9 +181,72 @@ def save_trade_note(payload: TradeNotePayload):
         note=payload.note,
         setup_tag=payload.setup_tag,
         mistake_tag=payload.mistake_tag,
+        exit_tag=payload.exit_tag.strip(),
+        entry_grade=_normalize_grade(payload.entry_grade),
+        execution_grade=_normalize_grade(payload.execution_grade),
+        management_grade=_normalize_grade(payload.management_grade),
         updated_at=int(time.time()),
     )
     return {"status": "ok", "ticket": payload.ticket}
+
+
+@app.get("/api/trades/{ticket}/candles")
+def get_trade_mtf_candles_endpoint(ticket: int):
+    cached = get_trade_candles(ticket)
+    missing_tfs = [tf for tf in ("h1", "m5", "m1") if not cached.get(tf)]
+    if not missing_tfs:
+        return {
+            "ticket": ticket,
+            "h1": cached["h1"],
+            "m5": cached["m5"],
+            "m1": cached["m1"],
+            "cached": True,
+            "mt5_connected": mt5_service.is_connected(),
+        }
+
+    deal = get_deal_by_ticket(ticket)
+    if not deal:
+        raise HTTPException(status_code=404, detail="Trade not found")
+
+    mt5_connected = mt5_service.is_connected()
+    if not deal.get("symbol"):
+        return {
+            "ticket": ticket,
+            "h1": [],
+            "m5": [],
+            "m1": [],
+            "cached": False,
+            "mt5_connected": mt5_connected,
+        }
+
+    open_time = int(deal.get("open_time") or deal.get("time") or 0)
+    close_time = int(deal.get("time") or open_time)
+    fetched_any = False
+
+    if mt5_connected:
+        fetched = mt5_service.get_trade_mtf_candles(
+            symbol=deal.get("symbol", ""),
+            open_time=open_time,
+            close_time=close_time,
+            timeframes=missing_tfs,
+        )
+        now_ts = int(time.time())
+        for tf in missing_tfs:
+            bars = fetched.get(tf) or []
+            if bars:
+                upsert_trade_candles(ticket, tf, bars, cached_at=now_ts)
+                cached[tf] = bars
+                fetched_any = True
+
+    has_cached = any(bool(cached.get(tf)) for tf in ("h1", "m5", "m1"))
+    return {
+        "ticket": ticket,
+        "h1": cached.get("h1", []),
+        "m5": cached.get("m5", []),
+        "m1": cached.get("m1", []),
+        "cached": has_cached and not fetched_any,
+        "mt5_connected": mt5_connected,
+    }
 
 
 @app.get("/api/portfolio")
@@ -247,6 +325,10 @@ def get_portfolio(
             t["note"] = n.get("note", "")
             t["setup_tag"] = n.get("setup_tag", "")
             t["mistake_tag"] = n.get("mistake_tag", "")
+            t["exit_tag"] = n.get("exit_tag", "")
+            t["entry_grade"] = n.get("entry_grade", "")
+            t["execution_grade"] = n.get("execution_grade", "")
+            t["management_grade"] = n.get("management_grade", "")
     return analytics_result
 
 @app.get("/api/trades/open")

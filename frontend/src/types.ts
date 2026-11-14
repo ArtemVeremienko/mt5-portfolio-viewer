@@ -1,3 +1,5 @@
+export type TradeGrade = 'A' | 'B' | 'C' | '';
+
 export type MetricMode = 'currency' | 'pct' | 'r';
 export type TradeScope = 'all' | 'last100';
 
@@ -308,6 +310,10 @@ export interface TradeDeal {
   note?: string;
   setup_tag?: string;
   mistake_tag?: string;
+  exit_tag?: string;
+  entry_grade?: TradeGrade;
+  execution_grade?: TradeGrade;
+  management_grade?: TradeGrade;
 }
 
 export interface ExcursionTrade {
