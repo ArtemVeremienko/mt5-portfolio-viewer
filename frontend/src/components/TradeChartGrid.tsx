@@ -49,6 +49,43 @@ function getNetProfit(t: TradeDeal): number {
   return t.net_profit !== undefined ? t.net_profit : t.profit + (t.swap || 0) + (t.commission || 0);
 }
 
+function countDecimals(val: number): number {
+  if (!Number.isFinite(val) || val <= 0) return 0;
+  const s = val.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+  const dot = s.indexOf('.');
+  return dot === -1 ? 0 : s.length - dot - 1;
+}
+
+function detectPriceFormat(bars: OhlcBar[], trade: TradeDeal): { type: 'price'; precision: number; minMove: number } {
+  let maxDecimals = 0;
+  let refPrice = trade.open_price || trade.price || 0;
+
+  const check = (v: number) => {
+    if (v > 0) {
+      if (!refPrice) refPrice = v;
+      const d = countDecimals(v);
+      if (d > maxDecimals) maxDecimals = d;
+    }
+  };
+
+  check(trade.open_price);
+  check(trade.price);
+  check(trade.sl);
+  check(trade.tp);
+  for (const b of bars) {
+    check(b.open);
+    check(b.high);
+    check(b.low);
+    check(b.close);
+  }
+
+  // Ensure at least 4 decimal places for FX-range prices (< 20), and at least 2 otherwise
+  const minPrecision = refPrice > 0 && refPrice < 20 ? 4 : 2;
+  const precision = Math.min(6, Math.max(minPrecision, maxDecimals));
+  const minMove = Number((1 / Math.pow(10, precision)).toFixed(precision));
+  return { type: 'price', precision, minMove };
+}
+
 function findBarTime(bars: OhlcBar[], targetTs: number, tfSeconds: number): UTCTimestamp | null {
   if (!bars.length || !targetTs) return null;
   if (targetTs < bars[0].time) {
@@ -191,6 +228,7 @@ const CandlePane: Component<CandlePaneProps> = (props) => {
       wickDownColor: '#f43f5e',
       priceLineVisible: false,
       lastValueVisible: false,
+      priceFormat: detectPriceFormat(bars, t),
     });
 
     candleSeries.setData(
