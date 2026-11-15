@@ -97,9 +97,20 @@ export const VanTharpPanel: Component<VanTharpPanelProps> = (props) => {
               Formula: <span class="font-mono text-purple-300">(R̄ / σR) × min(10, √N)</span>. Consistency across {s()?.total_trades || 0} trades.
             </p>
             <Show when={(s()?.sl_verified_count ?? 0) + (s()?.sl_estimated_count ?? 0) > 0}>
-              <p class="text-[10px] text-slate-500">
-                1R Model: <span class="text-emerald-400 font-semibold">{s()?.sl_verified_count ?? 0} SL-Verified</span> • <span class="text-amber-400 font-semibold">{s()?.sl_estimated_count ?? 0} 1%-Estimated</span>
-              </p>
+              <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/80 mt-2">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-[10px] text-slate-500">1R Model:</span>
+                  <span
+                    class="font-mono text-slate-200 font-semibold bg-slate-800/70 border border-slate-700/80 px-1.5 py-0.5 rounded text-[10px] cursor-help"
+                    title={`Mean 1R: $${(s()?.avg_1r ?? 0).toFixed(2)} • Median 1R: $${(s()?.median_1r ?? 0).toFixed(2)}`}
+                  >
+                    Avg 1R: ${(s()?.avg_1r ?? 0).toFixed(2)}
+                  </span>
+                </div>
+                <div class="text-[10px] text-slate-400">
+                  <span class="text-emerald-400 font-semibold">{s()?.sl_verified_count ?? 0} SL-Verified</span> • <span class="text-amber-400 font-semibold">{s()?.sl_estimated_count ?? 0} 1%-Estimated</span>
+                </div>
+              </div>
             </Show>
           </div>
         </div>

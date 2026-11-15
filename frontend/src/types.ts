@@ -84,6 +84,8 @@ export interface PortfolioStats {
   avg_loss_r: number;
   best_trade_r: number;
   worst_trade_r: number;
+  avg_1r?: number;
+  median_1r?: number;
   // Advanced Statistics
   profitability_won_pct?: number;
   profitability_lost_pct?: number;

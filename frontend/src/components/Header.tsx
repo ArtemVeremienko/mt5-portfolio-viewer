@@ -57,16 +57,38 @@ export const Header: Component<HeaderProps> = (props) => {
                         {gain() >= 0 ? '+' : ''}{gain().toFixed(2)}%
                       </div>
                     </div>
-                    <div class="px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-800 leading-tight">
-                      <div class="text-[9px] uppercase tracking-wider text-slate-400">
-                        {props.mode === 'r' ? 'Return (R)' : 'Profit'}
+                    <div
+                      class={`px-2 py-1 rounded-lg bg-slate-950/80 border leading-tight ${
+                        props.mode === 'r' ? 'border-purple-500/40 bg-purple-950/15 cursor-help' : 'border-slate-800'
+                      }`}
+                      title={
+                        props.mode === 'r'
+                          ? `Avg 1R: $${(st().avg_1r || 0).toFixed(2)} • Median 1R: $${(st().median_1r || 0).toFixed(2)}`
+                          : undefined
+                      }
+                    >
+                      <div class="flex items-center justify-between gap-1.5">
+                        <span class={`text-[9px] uppercase tracking-wider ${props.mode === 'r' ? 'text-purple-300' : 'text-slate-400'}`}>
+                          {props.mode === 'r' ? 'Return (R)' : 'Profit'}
+                        </span>
+                        <Show when={props.mode === 'r' && (st().avg_1r || 0) > 0}>
+                          <span class="text-[9px] font-mono text-slate-400">
+                            1R ≈ ${(st().avg_1r || 0).toFixed(2)}
+                          </span>
+                        </Show>
                       </div>
-                      <div class={`text-[11px] font-bold font-mono ${
+                      <div class={`text-[11px] font-bold font-mono flex items-baseline gap-1 ${
                         (props.mode === 'r' ? totalR() : profit()) >= 0 ? 'text-emerald-400' : 'text-rose-400'
                       }`}>
-                        {props.mode === 'r'
-                          ? `${totalR() >= 0 ? '+' : ''}${totalR().toFixed(2)}R`
-                          : `${profit() >= 0 ? '+$' : '-$'}${Math.abs(profit()).toFixed(2)}`}
+                        <Show
+                          when={props.mode === 'r'}
+                          fallback={<span>{profit() >= 0 ? '+$' : '-$'}{Math.abs(profit()).toFixed(2)}</span>}
+                        >
+                          <span>{totalR() >= 0 ? '+' : ''}{totalR().toFixed(2)}R</span>
+                          <span class="text-[9px] text-slate-400 font-normal">
+                            ({profit() >= 0 ? '+$' : '-$'}{Math.abs(profit()).toFixed(2)})
+                          </span>
+                        </Show>
                       </div>
                     </div>
                     <div class="px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-800 leading-tight">

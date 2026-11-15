@@ -193,6 +193,8 @@ def process_portfolio_analytics(
                 "sqn_rating": get_sqn_rating(0.0),
                 "r_expectancy": 0.0,
                 "r_std_dev": 0.0,
+                "avg_1r": 0.0,
+                "median_1r": 0.0,
                 "avg_win_r": 0.0,
                 "avg_loss_r": 0.0,
                 "best_trade_r": 0.0,
@@ -667,7 +669,10 @@ def process_portfolio_analytics(
     cur_losses = 0
     sl_verified_count = 0
     sl_estimated_count = 0
+    risk_1r_values: List[float] = []
     for td in trade_deals:
+        if td.get("risk_r", 0.0) > 0:
+            risk_1r_values.append(float(td["risk_r"]))
         if td.get("risk_source") == "sl":
             sl_verified_count += 1
         else:
@@ -1377,6 +1382,8 @@ def process_portfolio_analytics(
             "max_dd_duration_days": max_dd_duration_days,
             "sl_verified_count": sl_verified_count,
             "sl_estimated_count": sl_estimated_count,
+            "avg_1r": round(float(np.mean(risk_1r_values)), 2) if risk_1r_values else 0.0,
+            "median_1r": round(float(np.median(risk_1r_values)), 2) if risk_1r_values else 0.0,
             "today_profit": round(today_profit, 2),
             "week_profit": round(week_profit, 2),
             "month_profit": round(month_profit, 2),
