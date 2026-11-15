@@ -1738,7 +1738,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                                   : 'text-slate-400 hover:text-white'
                               }`}
                             >
-                              Exit / Mgmt
+                              Exit
                             </button>
                           </div>
                           <button

@@ -349,6 +349,15 @@ export interface ExcursionStats {
   optimal_sl_pips: number;
   optimal_sl_amount: number;
   optimal_sl_r: number;
+  optimal_sl_p50_pips?: number;
+  optimal_sl_p50_amount?: number;
+  optimal_sl_p50_r?: number;
+  optimal_tp_p50_pips?: number;
+  optimal_tp_p50_amount?: number;
+  optimal_tp_p50_r?: number;
+  optimal_tp_p90_pips?: number;
+  optimal_tp_p90_amount?: number;
+  optimal_tp_p90_r?: number;
   mfe_capture_efficiency_pct: number;
   avg_mae_pips: number;
   avg_mae_amount: number;

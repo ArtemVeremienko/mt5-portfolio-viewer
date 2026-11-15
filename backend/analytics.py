@@ -234,6 +234,15 @@ def process_portfolio_analytics(
                 "optimal_sl_pips": 0.0,
                 "optimal_sl_amount": 0.0,
                 "optimal_sl_r": 0.0,
+                "optimal_sl_p50_pips": 0.0,
+                "optimal_sl_p50_amount": 0.0,
+                "optimal_sl_p50_r": 0.0,
+                "optimal_tp_p50_pips": 0.0,
+                "optimal_tp_p50_amount": 0.0,
+                "optimal_tp_p50_r": 0.0,
+                "optimal_tp_p90_pips": 0.0,
+                "optimal_tp_p90_amount": 0.0,
+                "optimal_tp_p90_r": 0.0,
                 "mfe_capture_efficiency_pct": 0.0,
                 "avg_mae_pips": 0.0,
                 "avg_mae_amount": 0.0,
@@ -1263,6 +1272,22 @@ def process_portfolio_analytics(
     optimal_sl_amt = float(np.percentile(winning_mae_amt, 90)) if winning_mae_amt else 0.0
     optimal_sl_r = float(np.percentile(winning_mae_r, 90)) if winning_mae_r else 0.0
 
+    optimal_sl_p50_pips = float(np.percentile(winning_mae_pips, 50)) if winning_mae_pips else 0.0
+    optimal_sl_p50_amt = float(np.percentile(winning_mae_amt, 50)) if winning_mae_amt else 0.0
+    optimal_sl_p50_r = float(np.percentile(winning_mae_r, 50)) if winning_mae_r else 0.0
+
+    winning_mfe_pips = [t["mfe_pips"] for t in winning_trades if t.get("mfe_pips") is not None and t.get("mfe_pips") > 0]
+    winning_mfe_amt = [t["mfe_amount"] for t in winning_trades if t.get("mfe_amount") is not None and t.get("mfe_amount") > 0]
+    winning_mfe_r = [t["mfe_r"] for t in winning_trades if t.get("mfe_r") is not None and t.get("mfe_r") > 0]
+
+    optimal_tp_p50_pips = float(np.percentile(winning_mfe_pips, 50)) if winning_mfe_pips else 0.0
+    optimal_tp_p50_amt = float(np.percentile(winning_mfe_amt, 50)) if winning_mfe_amt else 0.0
+    optimal_tp_p50_r = float(np.percentile(winning_mfe_r, 50)) if winning_mfe_r else 0.0
+
+    optimal_tp_p90_pips = float(np.percentile(winning_mfe_pips, 90)) if winning_mfe_pips else 0.0
+    optimal_tp_p90_amt = float(np.percentile(winning_mfe_amt, 90)) if winning_mfe_amt else 0.0
+    optimal_tp_p90_r = float(np.percentile(winning_mfe_r, 90)) if winning_mfe_r else 0.0
+
     efficiencies = [
         (t["net_profit"] / t["mfe_amount"] * 100.0)
         for t in winning_trades
@@ -1281,6 +1306,15 @@ def process_portfolio_analytics(
         "optimal_sl_pips": round(optimal_sl_pips, 1),
         "optimal_sl_amount": round(optimal_sl_amt, 2),
         "optimal_sl_r": round(optimal_sl_r, 2),
+        "optimal_sl_p50_pips": round(optimal_sl_p50_pips, 1),
+        "optimal_sl_p50_amount": round(optimal_sl_p50_amt, 2),
+        "optimal_sl_p50_r": round(optimal_sl_p50_r, 2),
+        "optimal_tp_p50_pips": round(optimal_tp_p50_pips, 1),
+        "optimal_tp_p50_amount": round(optimal_tp_p50_amt, 2),
+        "optimal_tp_p50_r": round(optimal_tp_p50_r, 2),
+        "optimal_tp_p90_pips": round(optimal_tp_p90_pips, 1),
+        "optimal_tp_p90_amount": round(optimal_tp_p90_amt, 2),
+        "optimal_tp_p90_r": round(optimal_tp_p90_r, 2),
         "mfe_capture_efficiency_pct": round(mfe_capture_eff, 1),
         "avg_mae_pips": round(float(np.mean(all_mae_pips)), 1) if all_mae_pips else 0.0,
         "avg_mae_amount": round(float(np.mean(all_mae_amt)), 2) if all_mae_amt else 0.0,

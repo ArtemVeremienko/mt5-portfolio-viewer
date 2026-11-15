@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 VALID_TAG_KINDS = {"setup", "exit", "mistake"}
 VALID_MISTAKE_CATEGORIES = {"entry", "exit_mgmt"}
 
-DEFAULT_EXIT_TAG_PRESETS = ["TP", "SL", "BE", "Trailing", "Manual"]
+DEFAULT_EXIT_TAG_PRESETS = ["TP", "SL", "BE+", "BE-", "Trailing", "Manual", "Partial TP", "Time Exit"]
 DEFAULT_ENTRY_MISTAKE_PRESETS = ["FOMO", "Chased", "Early Entry", "Counter-Trend", "No Setup"]
 DEFAULT_EXIT_MISTAKE_PRESETS = ["Moved SL", "Early Exit", "Hesitated", "Oversized", "Revenge"]
 
@@ -371,6 +371,13 @@ def _register_tag_cursor(
 def _seed_and_backfill_review_tags(cursor: sqlite3.Cursor):
     count_row = cursor.execute("SELECT COUNT(*) AS cnt FROM review_tags").fetchone()
     if count_row and int(count_row["cnt"]) > 0:
+        # Ensure newly introduced exit presets are added once to existing DBs
+        has_be_plus = cursor.execute(
+            "SELECT 1 FROM review_tags WHERE kind = 'exit' AND name_lower = 'be+'"
+        ).fetchone()
+        if not has_be_plus:
+            for preset in ("BE+", "BE-", "Partial TP", "Time Exit"):
+                _register_tag_cursor(cursor, "exit", preset, "", is_default=1)
         return
 
     for preset in DEFAULT_EXIT_TAG_PRESETS:

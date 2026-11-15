@@ -407,16 +407,31 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                 <span class="uppercase tracking-wider">Optimal SL Cutoff</span>
                 <ShieldAlert size={15} />
               </div>
-              <div class="text-2xl font-black text-white mt-1">
-                {formatExcursion(
-                  stats()?.optimal_sl_pips || 0,
-                  stats()?.optimal_sl_amount || 0,
-                  stats()?.optimal_sl_r || 0
-                )}
+              <div class="flex items-baseline gap-2 mt-1">
+                <span class="text-2xl font-black text-white">
+                  {formatExcursion(
+                    stats()?.optimal_sl_pips || 0,
+                    stats()?.optimal_sl_amount || 0,
+                    stats()?.optimal_sl_r || 0
+                  )}
+                </span>
+                <span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[10px] font-mono font-bold">
+                  P90
+                </span>
+              </div>
+              <div class="mt-1.5 text-[11px] font-mono text-slate-400">
+                P50 (Median):{' '}
+                <strong class="text-slate-200">
+                  {formatExcursion(
+                    stats()?.optimal_sl_p50_pips || 0,
+                    stats()?.optimal_sl_p50_amount || 0,
+                    stats()?.optimal_sl_p50_r || 0
+                  )}
+                </strong>
               </div>
             </div>
             <p class="text-[11px] text-slate-400 mt-2">
-              90% of your winning trades never suffered a deeper drawdown than this.
+              90% of winning trades stayed within this drawdown; 50% stayed within the median.
             </p>
           </div>
 
@@ -467,9 +482,31 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
                   stats()?.avg_mfe_r || 0
                 )}
               </div>
+              <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-slate-400">
+                <span>
+                  Win P50:{' '}
+                  <strong class="text-cyan-300">
+                    {formatExcursion(
+                      stats()?.optimal_tp_p50_pips || 0,
+                      stats()?.optimal_tp_p50_amount || 0,
+                      stats()?.optimal_tp_p50_r || 0
+                    )}
+                  </strong>
+                </span>
+                <span>
+                  Win P90:{' '}
+                  <strong class="text-slate-200">
+                    {formatExcursion(
+                      stats()?.optimal_tp_p90_pips || 0,
+                      stats()?.optimal_tp_p90_amount || 0,
+                      stats()?.optimal_tp_p90_r || 0
+                    )}
+                  </strong>
+                </span>
+              </div>
             </div>
             <p class="text-[11px] text-slate-400 mt-2">
-              Average peak potential profit floating before trade closure.
+              Average peak potential profit floating before close (with winning TP P50/P90 targets).
             </p>
           </div>
 
