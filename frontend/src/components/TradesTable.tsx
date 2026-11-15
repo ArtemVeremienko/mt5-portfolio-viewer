@@ -1,7 +1,7 @@
 import { Component, createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { TradeDeal, OpenPosition, MetricMode, TradeScope, CashflowItem, TradeGrade } from '../types';
-import { Search, ArrowUpRight, ArrowDownRight, History, Download, X, ArrowUpDown, Tag, SlidersHorizontal, RotateCcw, CandlestickChart } from 'lucide-solid';
+import { TradeDeal, OpenPosition, MetricMode, TradeScope, CashflowItem, TradeGrade, ReviewTag, ReviewTagKind, MistakeCategory } from '../types';
+import { Search, ArrowUpRight, ArrowDownRight, History, Download, X, ArrowUpDown, Tag, SlidersHorizontal, RotateCcw, CandlestickChart, Pencil, Trash2, Check } from 'lucide-solid';
 import { getStorageItem, setStorageItem } from '../utils/storage';
 import { TradeChartGrid } from './TradeChartGrid';
 
@@ -59,10 +59,6 @@ const HISTORY_COLUMNS: HistoryColumnDef[] = [
   { key: 'grade', label: 'Grade', defaultVisible: true },
   { key: 'journal', label: 'Journal', defaultVisible: true },
 ];
-
-const EXIT_TAG_PRESETS = ['TP', 'SL', 'BE', 'Trailing', 'Manual'] as const;
-const ENTRY_MISTAKE_PRESETS = ['FOMO', 'Chased', 'Early Entry', 'Counter-Trend', 'No Setup'] as const;
-const EXIT_MISTAKE_PRESETS = ['Moved SL', 'Early Exit', 'Hesitated', 'Oversized', 'Revenge'] as const;
 
 function parseTagList(raw?: string): string[] {
   if (!raw) return [];
@@ -164,6 +160,13 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
   const [exitTag, setExitTag] = createSignal('');
   const [mistakeTags, setMistakeTags] = createSignal<string[]>([]);
   const [customMistakeInput, setCustomMistakeInput] = createSignal('');
+  const [customMistakeCategory, setCustomMistakeCategory] = createSignal<MistakeCategory>('entry');
+  const [reviewTags, setReviewTags] = createSignal<ReviewTag[]>([]);
+  const [manageTagsMode, setManageTagsMode] = createSignal(false);
+  const [editingTagId, setEditingTagId] = createSignal<number | null>(null);
+  const [editTagName, setEditTagName] = createSignal('');
+  const [editTagCategory, setEditTagCategory] = createSignal<MistakeCategory>('entry');
+  const [savingTagEdit, setSavingTagEdit] = createSignal(false);
   const [entryGrade, setEntryGrade] = createSignal<TradeGrade>('');
   const [executionGrade, setExecutionGrade] = createSignal<TradeGrade>('');
   const [managementGrade, setManagementGrade] = createSignal<TradeGrade>('');
@@ -196,7 +199,20 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     setStorageItem(VISIBLE_COLUMNS_STORAGE_KEY, DEFAULT_VISIBLE_COLUMNS);
   };
 
+  const fetchReviewTags = async () => {
+    try {
+      const res = await fetch('/api/tags');
+      if (res.ok) {
+        const data = await res.json();
+        setReviewTags(data.tags || []);
+      }
+    } catch (e) {
+      console.error('Failed to load review tags:', e);
+    }
+  };
+
   onMount(() => {
+    fetchReviewTags();
     const handlePointerDown = (e: MouseEvent) => {
       if (showColumnsMenu() && columnsMenuRef && !columnsMenuRef.contains(e.target as Node)) {
         setShowColumnsMenu(false);
@@ -215,16 +231,28 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     });
   });
 
-  const usedSetupTags = createMemo(() => {
-    const seen = new Map<string, string>();
-    for (const t of props.closedTrades) {
-      const s = (t.setup_tag || '').trim();
-      if (s && !seen.has(s.toLowerCase())) {
-        seen.set(s.toLowerCase(), s);
-      }
-    }
-    return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
-  });
+  const setupLibraryTags = createMemo(() =>
+    reviewTags()
+      .filter((t) => t.kind === 'setup')
+      .sort((a, b) => a.name.localeCompare(b.name))
+  );
+
+  const exitLibraryTags = createMemo(() =>
+    reviewTags().filter((t) => t.kind === 'exit')
+  );
+
+  const entryMistakeTags = createMemo(() =>
+    reviewTags().filter((t) => t.kind === 'mistake' && t.category !== 'exit_mgmt')
+  );
+
+  const exitMistakeTags = createMemo(() =>
+    reviewTags().filter((t) => t.kind === 'mistake' && t.category === 'exit_mgmt')
+  );
+
+  const findLibraryTag = (kind: ReviewTagKind, name: string): ReviewTag | undefined => {
+    const key = name.trim().toLowerCase();
+    return reviewTags().find((t) => t.kind === kind && t.name.toLowerCase() === key);
+  };
 
   const toggleMistakeTag = (tag: string) => {
     const key = tag.trim().toLowerCase();
@@ -235,14 +263,117 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     });
   };
 
-  const addCustomMistakeTag = () => {
+  const addCustomMistakeTag = async () => {
     const raw = customMistakeInput().trim();
     if (!raw) return;
+    const cat = customMistakeCategory();
     for (const part of parseTagList(raw)) {
       const key = part.toLowerCase();
       setMistakeTags((prev) => (prev.some((t) => t.toLowerCase() === key) ? prev : [...prev, part]));
+      try {
+        await fetch('/api/tags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: 'mistake', name: part, category: cat }),
+        });
+      } catch (e) {
+        console.error('Failed to create custom mistake tag:', e);
+      }
     }
     setCustomMistakeInput('');
+    await fetchReviewTags();
+  };
+
+  const startEditingTag = (tag: ReviewTag) => {
+    setEditingTagId(tag.id);
+    setEditTagName(tag.name);
+    setEditTagCategory(tag.category === 'exit_mgmt' ? 'exit_mgmt' : 'entry');
+  };
+
+  const cancelEditingTag = () => {
+    setEditingTagId(null);
+    setEditTagName('');
+  };
+
+  const saveTagEdit = async (tag: ReviewTag) => {
+    const nextName = editTagName().trim();
+    if (!nextName) return;
+    setSavingTagEdit(true);
+    try {
+      const res = await fetch(`/api/tags/${tag.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: nextName,
+          category: tag.kind === 'mistake' ? editTagCategory() : undefined,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const updatedName: string = data.tag?.name || nextName;
+        const oldLower = tag.name.toLowerCase();
+        // Sync currently open journal modal state if applicable
+        if (tag.kind === 'setup' && setupTag().trim().toLowerCase() === oldLower) {
+          setSetupTag(updatedName);
+        } else if (tag.kind === 'exit' && exitTag().trim().toLowerCase() === oldLower) {
+          setExitTag(updatedName);
+        } else if (tag.kind === 'mistake') {
+          setMistakeTags((prev) => {
+            const seen = new Set<string>();
+            const next: string[] = [];
+            for (const m of prev) {
+              const val = m.toLowerCase() === oldLower ? updatedName : m;
+              if (!seen.has(val.toLowerCase())) {
+                seen.add(val.toLowerCase());
+                next.push(val);
+              }
+            }
+            return next;
+          });
+        }
+        if (tagFilter().trim().toLowerCase() === oldLower) {
+          setTagFilter(updatedName);
+        }
+        setEditingTagId(null);
+        await fetchReviewTags();
+        props.onNoteSaved?.();
+      }
+    } catch (e) {
+      console.error('Failed to update tag:', e);
+    } finally {
+      setSavingTagEdit(false);
+    }
+  };
+
+  const deleteTag = async (tag: ReviewTag) => {
+    const msg =
+      tag.usage_count > 0
+        ? `Delete tag "${tag.name}"? This will also remove it from ${tag.usage_count} trade(s).`
+        : `Delete unused tag "${tag.name}"?`;
+    if (!window.confirm(msg)) return;
+    try {
+      const res = await fetch(`/api/tags/${tag.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        const oldLower = tag.name.toLowerCase();
+        if (tag.kind === 'setup' && setupTag().trim().toLowerCase() === oldLower) {
+          setSetupTag('');
+        } else if (tag.kind === 'exit' && exitTag().trim().toLowerCase() === oldLower) {
+          setExitTag('');
+        } else if (tag.kind === 'mistake') {
+          setMistakeTags((prev) => prev.filter((m) => m.toLowerCase() !== oldLower));
+        }
+        if (tagFilter().trim().toLowerCase() === oldLower) {
+          setTagFilter('');
+        }
+        if (editingTagId() === tag.id) {
+          setEditingTagId(null);
+        }
+        await fetchReviewTags();
+        props.onNoteSaved?.();
+      }
+    } catch (e) {
+      console.error('Failed to delete tag:', e);
+    }
   };
 
   const openNoteEditor = (t: TradeDeal) => {
@@ -252,6 +383,8 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     setExitTag(t.exit_tag || '');
     setMistakeTags(parseTagList(t.mistake_tag));
     setCustomMistakeInput('');
+    setManageTagsMode(false);
+    setEditingTagId(null);
     setEntryGrade(t.entry_grade || '');
     setExecutionGrade(t.execution_grade || '');
     setManagementGrade(t.management_grade || '');
@@ -279,6 +412,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
       });
       if (res.ok) {
         setEditingTrade(null);
+        await fetchReviewTags();
         props.onNoteSaved?.();
       }
     } catch (e) {
@@ -1106,101 +1240,170 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
             </Show>
           </div>
 
-          <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
-            <h4 class="text-xs font-bold uppercase tracking-wider text-sky-400">Exit Breakdown</h4>
-            <Show
-              when={tagAnalytics().exits.length > 0}
-              fallback={<p class="text-xs text-slate-500 py-4 text-center">No exit tags logged yet. Set Exit (TP, SL, BE, Trailing, Manual) in Journal.</p>}
-            >
-              <div class="space-y-1.5">
-                <For each={tagAnalytics().exits}>
-                  {(row) => {
-                    const wr = (row.won / Math.max(1, row.trades)) * 100;
-                    const expR = row.totalR / Math.max(1, row.trades);
-                    return (
-                      <button
-                        onClick={() => { setTagFilter(row.tag); setActiveTab('history'); setPage(1); }}
-                        class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs transition-colors"
-                      >
-                        <div class="text-left">
-                          <div class="font-semibold text-white">{row.tag}</div>
-                          <div class="text-[10px] text-slate-400 font-mono">{row.trades} trades • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R</div>
-                        </div>
-                        <div class="text-right font-mono">
-                          <div class={`font-bold ${row.totalR >= 0 ? 'text-purple-300' : 'text-rose-400'}`}>{row.totalR >= 0 ? '+' : ''}{row.totalR.toFixed(2)}R</div>
-                          <div class={`text-[10px] ${row.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{row.totalProfit >= 0 ? '+$' : '-$'}{Math.abs(row.totalProfit).toFixed(2)}</div>
-                        </div>
-                      </button>
-                    );
-                  }}
-                </For>
+          {(() => {
+            const renderTagSection = (
+              title: string,
+              titleClass: string,
+              rows: Array<{ tag: string; kind: ReviewTagKind; trades: number; won: number; totalR: number; totalProfit: number }>,
+              emptyMsg: string
+            ) => (
+              <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
+                <h4 class={`text-xs font-bold uppercase tracking-wider ${titleClass}`}>{title}</h4>
+                <Show
+                  when={rows.length > 0}
+                  fallback={<p class="text-xs text-slate-500 py-4 text-center">{emptyMsg}</p>}
+                >
+                  <div class="space-y-1.5">
+                    <For each={rows}>
+                      {(row) => {
+                        const wr = (row.won / Math.max(1, row.trades)) * 100;
+                        const expR = row.totalR / Math.max(1, row.trades);
+                        const libTag = () => findLibraryTag(row.kind, row.tag);
+                        const isEditing = () => {
+                          const t = libTag();
+                          return t !== undefined && editingTagId() === t.id;
+                        };
+                        return (
+                          <Show
+                            when={isEditing() && libTag()}
+                            fallback={
+                              <div class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs transition-colors">
+                                <button
+                                  type="button"
+                                  onClick={() => { setTagFilter(row.tag); setActiveTab('history'); setPage(1); }}
+                                  class="flex-1 flex items-center justify-between text-left min-w-0"
+                                >
+                                  <div class="min-w-0">
+                                    <div class="flex items-center gap-1.5">
+                                      <span class="font-semibold text-white truncate">{row.tag}</span>
+                                      <Show when={row.kind === 'mistake' && libTag()}>
+                                        {(lt) => (
+                                          <span class="px-1.5 py-0.2 rounded text-[9px] uppercase tracking-wider bg-slate-800 text-slate-400 border border-slate-700 shrink-0">
+                                            {lt().category === 'exit_mgmt' ? 'Exit/Mgmt' : 'Entry'}
+                                          </span>
+                                        )}
+                                      </Show>
+                                    </div>
+                                    <div class="text-[10px] text-slate-400 font-mono">{row.trades} trades • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R</div>
+                                  </div>
+                                  <div class="text-right font-mono shrink-0 ml-2">
+                                    <div class={`font-bold ${row.totalR >= 0 ? 'text-purple-300' : 'text-rose-400'}`}>{row.totalR >= 0 ? '+' : ''}{row.totalR.toFixed(2)}R</div>
+                                    <div class={`text-[10px] ${row.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{row.totalProfit >= 0 ? '+$' : '-$'}{Math.abs(row.totalProfit).toFixed(2)}</div>
+                                  </div>
+                                </button>
+                                <Show when={libTag()}>
+                                  {(lt) => (
+                                    <div class="flex items-center gap-0.5 pl-1 border-l border-slate-800 shrink-0">
+                                      <button
+                                        type="button"
+                                        title={`Edit "${row.tag}"`}
+                                        onClick={() => startEditingTag(lt())}
+                                        class="p-1 rounded text-slate-500 hover:text-blue-400 hover:bg-slate-800"
+                                      >
+                                        <Pencil size={12} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title={`Delete "${row.tag}"`}
+                                        onClick={() => deleteTag(lt())}
+                                        class="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  )}
+                                </Show>
+                              </div>
+                            }
+                          >
+                            {(lt) => (
+                              <div class="p-2.5 rounded-lg bg-slate-900 border border-blue-500/40 space-y-2 text-xs">
+                                <div class="flex items-center gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={editTagName()}
+                                    onInput={(e) => setEditTagName(e.currentTarget.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        saveTagEdit(lt());
+                                      } else if (e.key === 'Escape') {
+                                        cancelEditingTag();
+                                      }
+                                    }}
+                                    class="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={savingTagEdit() || !editTagName().trim()}
+                                    onClick={() => saveTagEdit(lt())}
+                                    class="p-1.5 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white"
+                                    title="Save tag"
+                                  >
+                                    <Check size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditingTag}
+                                    class="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+                                    title="Cancel"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                                <Show when={lt().kind === 'mistake'}>
+                                  <div class="flex items-center gap-1.5 text-[10px]">
+                                    <span class="text-slate-400">Category:</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditTagCategory('entry')}
+                                      class={`px-2 py-0.5 rounded border ${editTagCategory() === 'entry' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-slate-950 text-slate-400 border-slate-800'}`}
+                                    >
+                                      Entry
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditTagCategory('exit_mgmt')}
+                                      class={`px-2 py-0.5 rounded border ${editTagCategory() === 'exit_mgmt' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-slate-950 text-slate-400 border-slate-800'}`}
+                                    >
+                                      Exit / Mgmt
+                                    </button>
+                                  </div>
+                                </Show>
+                              </div>
+                            )}
+                          </Show>
+                        );
+                      }}
+                    </For>
+                  </div>
+                </Show>
               </div>
-            </Show>
-          </div>
+            );
 
-          <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
-            <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-400">Setup Playbook</h4>
-            <Show
-              when={tagAnalytics().setups.length > 0}
-              fallback={<p class="text-xs text-slate-500 py-4 text-center">No setup tags logged yet. Use Journal → Log on closed trades.</p>}
-            >
-              <div class="space-y-1.5">
-                <For each={tagAnalytics().setups}>
-                  {(row) => {
-                    const wr = (row.won / Math.max(1, row.trades)) * 100;
-                    const expR = row.totalR / Math.max(1, row.trades);
-                    return (
-                      <button
-                        onClick={() => { setTagFilter(row.tag); setActiveTab('history'); setPage(1); }}
-                        class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs transition-colors"
-                      >
-                        <div class="text-left">
-                          <div class="font-semibold text-white">{row.tag}</div>
-                          <div class="text-[10px] text-slate-400 font-mono">{row.trades} trades • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R</div>
-                        </div>
-                        <div class="text-right font-mono">
-                          <div class={`font-bold ${row.totalR >= 0 ? 'text-purple-300' : 'text-rose-400'}`}>{row.totalR >= 0 ? '+' : ''}{row.totalR.toFixed(2)}R</div>
-                          <div class={`text-[10px] ${row.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{row.totalProfit >= 0 ? '+$' : '-$'}{Math.abs(row.totalProfit).toFixed(2)}</div>
-                        </div>
-                      </button>
-                    );
-                  }}
-                </For>
-              </div>
-            </Show>
-          </div>
-
-          <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
-            <h4 class="text-xs font-bold uppercase tracking-wider text-rose-400">Mistake & Execution Leaks</h4>
-            <Show
-              when={tagAnalytics().mistakes.length > 0}
-              fallback={<p class="text-xs text-slate-500 py-4 text-center">No mistake tags logged yet.</p>}
-            >
-              <div class="space-y-1.5">
-                <For each={tagAnalytics().mistakes}>
-                  {(row) => {
-                    const wr = (row.won / Math.max(1, row.trades)) * 100;
-                    const expR = row.totalR / Math.max(1, row.trades);
-                    return (
-                      <button
-                        onClick={() => { setTagFilter(row.tag); setActiveTab('history'); setPage(1); }}
-                        class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs transition-colors"
-                      >
-                        <div class="text-left">
-                          <div class="font-semibold text-white">{row.tag}</div>
-                          <div class="text-[10px] text-slate-400 font-mono">{row.trades} trades • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R</div>
-                        </div>
-                        <div class="text-right font-mono">
-                          <div class={`font-bold ${row.totalR >= 0 ? 'text-purple-300' : 'text-rose-400'}`}>{row.totalR >= 0 ? '+' : ''}{row.totalR.toFixed(2)}R</div>
-                          <div class={`text-[10px] ${row.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{row.totalProfit >= 0 ? '+$' : '-$'}{Math.abs(row.totalProfit).toFixed(2)}</div>
-                        </div>
-                      </button>
-                    );
-                  }}
-                </For>
-              </div>
-            </Show>
-          </div>
+            return (
+              <>
+                {renderTagSection(
+                  'Exit Breakdown',
+                  'text-sky-400',
+                  tagAnalytics().exits,
+                  'No exit tags logged yet. Set Exit (TP, SL, BE, Trailing, Manual) in Journal.'
+                )}
+                {renderTagSection(
+                  'Setup Playbook',
+                  'text-emerald-400',
+                  tagAnalytics().setups,
+                  'No setup tags logged yet. Use Journal → Log on closed trades.'
+                )}
+                {renderTagSection(
+                  'Mistake & Execution Leaks',
+                  'text-rose-400',
+                  tagAnalytics().mistakes,
+                  'No mistake tags logged yet.'
+                )}
+              </>
+            );
+          })()}
         </div>
       </Show>
 
@@ -1268,146 +1471,287 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                     ))}
                   </div>
                 </div>
-                <div>
-                  <label class="block text-slate-400 mb-1">Setup Tag</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. London Breakout, Pullback EMA20"
-                    value={setupTag()}
-                    onInput={(e) => setSetupTag(e.currentTarget.value)}
-                    class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-blue-500"
-                  />
-                  <Show when={usedSetupTags().length > 0}>
-                    <div class="flex flex-wrap gap-1.5 mt-1.5">
-                      <For each={usedSetupTags()}>
-                        {(tag) => (
+                {(() => {
+                  const renderInlineTagEditor = (kind: ReviewTagKind) => {
+                    const editing = () => {
+                      const id = editingTagId();
+                      if (id === null) return undefined;
+                      return reviewTags().find((rt) => rt.id === id && rt.kind === kind);
+                    };
+                    return (
+                      <Show when={editing()}>
+                        {(lt) => (
+                          <div class="mt-2 p-2.5 rounded-lg bg-slate-900 border border-blue-500/40 space-y-2">
+                            <div class="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={editTagName()}
+                                onInput={(e) => setEditTagName(e.currentTarget.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    saveTagEdit(lt());
+                                  } else if (e.key === 'Escape') {
+                                    cancelEditingTag();
+                                  }
+                                }}
+                                class="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500"
+                              />
+                              <button
+                                type="button"
+                                disabled={savingTagEdit() || !editTagName().trim()}
+                                onClick={() => saveTagEdit(lt())}
+                                class="px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-[11px] font-medium"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingTag}
+                                class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px]"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                            <Show when={kind === 'mistake'}>
+                              <div class="flex items-center gap-1.5 text-[10px]">
+                                <span class="text-slate-400">Category:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditTagCategory('entry')}
+                                  class={`px-2 py-0.5 rounded border ${editTagCategory() === 'entry' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-slate-950 text-slate-400 border-slate-800'}`}
+                                >
+                                  Entry
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditTagCategory('exit_mgmt')}
+                                  class={`px-2 py-0.5 rounded border ${editTagCategory() === 'exit_mgmt' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-slate-950 text-slate-400 border-slate-800'}`}
+                                >
+                                  Exit / Mgmt
+                                </button>
+                              </div>
+                            </Show>
+                          </div>
+                        )}
+                      </Show>
+                    );
+                  };
+
+                  const renderLibraryChip = (
+                    tag: ReviewTag,
+                    isActive: () => boolean,
+                    activeClass: string,
+                    onSelect: () => void
+                  ) => (
+                    <div
+                      class={`inline-flex items-center rounded-md text-[11px] border transition-colors ${
+                        isActive()
+                          ? activeClass
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={onSelect}
+                        class="px-2 py-0.5 font-medium"
+                      >
+                        {tag.name}
+                      </button>
+                      <Show when={manageTagsMode()}>
+                        <button
+                          type="button"
+                          title={`Edit "${tag.name}"`}
+                          onClick={() => startEditingTag(tag)}
+                          class="px-1 py-0.5 text-slate-400 hover:text-blue-400 border-l border-slate-800/80"
+                        >
+                          <Pencil size={10} />
+                        </button>
+                        <button
+                          type="button"
+                          title={`Delete "${tag.name}"`}
+                          onClick={() => deleteTag(tag)}
+                          class="px-1 py-0.5 text-slate-400 hover:text-rose-400 border-l border-slate-800/80"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      </Show>
+                    </div>
+                  );
+
+                  return (
+                    <>
+                      <div>
+                        <div class="flex items-center justify-between mb-1">
+                          <label class="text-slate-400">Setup Tag</label>
                           <button
                             type="button"
-                            onClick={() => setSetupTag(setupTag().trim().toLowerCase() === tag.toLowerCase() ? '' : tag)}
-                            class={`px-2 py-0.5 rounded-md text-[11px] border transition-colors ${
-                              setupTag().trim().toLowerCase() === tag.toLowerCase()
-                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            onClick={() => {
+                              setManageTagsMode(!manageTagsMode());
+                              setEditingTagId(null);
+                            }}
+                            class={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                              manageTagsMode()
+                                ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
                                 : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
                             }`}
                           >
-                            {tag}
+                            <Pencil size={10} />
+                            <span>{manageTagsMode() ? 'Done Managing' : 'Manage Tags'}</span>
                           </button>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                </div>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="e.g. London Breakout, Pullback EMA20"
+                          value={setupTag()}
+                          onInput={(e) => setSetupTag(e.currentTarget.value)}
+                          class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-blue-500"
+                        />
+                        <Show when={setupLibraryTags().length > 0}>
+                          <div class="flex flex-wrap gap-1.5 mt-1.5">
+                            <For each={setupLibraryTags()}>
+                              {(tag) =>
+                                renderLibraryChip(
+                                  tag,
+                                  () => setupTag().trim().toLowerCase() === tag.name.toLowerCase(),
+                                  'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+                                  () => setSetupTag(setupTag().trim().toLowerCase() === tag.name.toLowerCase() ? '' : tag.name)
+                                )
+                              }
+                            </For>
+                          </div>
+                        </Show>
+                        {renderInlineTagEditor('setup')}
+                      </div>
 
-                <div>
-                  <label class="block text-slate-400 mb-1">Exit Tag</label>
-                  <div class="flex flex-wrap gap-1.5 mb-1.5">
-                    {EXIT_TAG_PRESETS.map((preset) => {
-                      const active = () => exitTag().trim().toLowerCase() === preset.toLowerCase();
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => setExitTag(active() ? '' : preset)}
-                          class={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
-                            active()
-                              ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
-                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                          }`}
-                        >
-                          {preset}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Or custom exit reason..."
-                    value={exitTag()}
-                    onInput={(e) => setExitTag(e.currentTarget.value)}
-                    class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+                      <div>
+                        <label class="block text-slate-400 mb-1">Exit Tag</label>
+                        <div class="flex flex-wrap gap-1.5 mb-1.5">
+                          <For each={exitLibraryTags()}>
+                            {(tag) =>
+                              renderLibraryChip(
+                                tag,
+                                () => exitTag().trim().toLowerCase() === tag.name.toLowerCase(),
+                                'bg-sky-500/20 text-sky-300 border-sky-500/40',
+                                () => setExitTag(exitTag().trim().toLowerCase() === tag.name.toLowerCase() ? '' : tag.name)
+                              )
+                            }
+                          </For>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Or custom exit reason..."
+                          value={exitTag()}
+                          onInput={(e) => setExitTag(e.currentTarget.value)}
+                          class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500"
+                        />
+                        {renderInlineTagEditor('exit')}
+                      </div>
 
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between">
-                    <label class="text-slate-400">Mistake Tags</label>
-                    <Show when={mistakeTags().length > 0}>
-                      <button
-                        type="button"
-                        onClick={() => setMistakeTags([])}
-                        class="text-[10px] text-slate-500 hover:text-rose-400"
-                      >
-                        Clear ({mistakeTags().length})
-                      </button>
-                    </Show>
-                  </div>
-
-                  {[
-                    { group: 'Entry', presets: ENTRY_MISTAKE_PRESETS },
-                    { group: 'Exit / Mgmt', presets: EXIT_MISTAKE_PRESETS },
-                  ].map((g) => (
-                    <div class="space-y-1">
-                      <span class="block text-[10px] uppercase tracking-wider text-slate-500">{g.group}</span>
-                      <div class="flex flex-wrap gap-1.5">
-                        {g.presets.map((preset) => {
-                          const active = () => mistakeTags().some((t) => t.toLowerCase() === preset.toLowerCase());
-                          return (
+                      <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                          <label class="text-slate-400">Mistake Tags</label>
+                          <Show when={mistakeTags().length > 0}>
                             <button
                               type="button"
-                              onClick={() => toggleMistakeTag(preset)}
-                              class={`px-2 py-0.5 rounded-md text-[11px] border transition-colors ${
-                                active()
-                                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                              onClick={() => setMistakeTags([])}
+                              class="text-[10px] text-slate-500 hover:text-rose-400"
+                            >
+                              Clear ({mistakeTags().length})
+                            </button>
+                          </Show>
+                        </div>
+
+                        {[
+                          { group: 'Entry', tags: entryMistakeTags },
+                          { group: 'Exit / Mgmt', tags: exitMistakeTags },
+                        ].map((g) => (
+                          <div class="space-y-1">
+                            <span class="block text-[10px] uppercase tracking-wider text-slate-500">{g.group}</span>
+                            <div class="flex flex-wrap gap-1.5">
+                              <For each={g.tags()}>
+                                {(tag) =>
+                                  renderLibraryChip(
+                                    tag,
+                                    () => mistakeTags().some((m) => m.toLowerCase() === tag.name.toLowerCase()),
+                                    'bg-rose-500/20 text-rose-300 border-rose-500/40',
+                                    () => toggleMistakeTag(tag.name)
+                                  )
+                                }
+                              </For>
+                            </div>
+                          </div>
+                        ))}
+
+                        <Show when={mistakeTags().some((t) => !reviewTags().some((rt) => rt.kind === 'mistake' && rt.name.toLowerCase() === t.toLowerCase()))}>
+                          <div class="flex flex-wrap gap-1.5 pt-0.5">
+                            <For each={mistakeTags().filter((t) => !reviewTags().some((rt) => rt.kind === 'mistake' && rt.name.toLowerCase() === t.toLowerCase()))}>
+                              {(customTag) => (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleMistakeTag(customTag)}
+                                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                                >
+                                  <span>{customTag}</span>
+                                  <X size={10} />
+                                </button>
+                              )}
+                            </For>
+                          </div>
+                        </Show>
+
+                        {renderInlineTagEditor('mistake')}
+
+                        <div class="flex flex-wrap items-center gap-1.5">
+                          <input
+                            type="text"
+                            placeholder="Add custom mistake tag..."
+                            value={customMistakeInput()}
+                            onInput={(e) => setCustomMistakeInput(e.currentTarget.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                addCustomMistakeTag();
+                              }
+                            }}
+                            class="flex-1 min-w-[140px] bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500"
+                          />
+                          <div class="inline-flex rounded-lg bg-slate-950 border border-slate-800 p-0.5 text-[10px]">
+                            <button
+                              type="button"
+                              onClick={() => setCustomMistakeCategory('entry')}
+                              class={`px-2 py-1 rounded-md font-medium transition-colors ${
+                                customMistakeCategory() === 'entry'
+                                  ? 'bg-rose-500/20 text-rose-300'
+                                  : 'text-slate-400 hover:text-white'
                               }`}
                             >
-                              {preset}
+                              Entry
                             </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-
-                  <Show when={mistakeTags().some((t) => !ENTRY_MISTAKE_PRESETS.some((p) => p.toLowerCase() === t.toLowerCase()) && !EXIT_MISTAKE_PRESETS.some((p) => p.toLowerCase() === t.toLowerCase()))}>
-                    <div class="flex flex-wrap gap-1.5 pt-0.5">
-                      <For each={mistakeTags().filter((t) => !ENTRY_MISTAKE_PRESETS.some((p) => p.toLowerCase() === t.toLowerCase()) && !EXIT_MISTAKE_PRESETS.some((p) => p.toLowerCase() === t.toLowerCase()))}>
-                        {(customTag) => (
+                            <button
+                              type="button"
+                              onClick={() => setCustomMistakeCategory('exit_mgmt')}
+                              class={`px-2 py-1 rounded-md font-medium transition-colors ${
+                                customMistakeCategory() === 'exit_mgmt'
+                                  ? 'bg-rose-500/20 text-rose-300'
+                                  : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              Exit / Mgmt
+                            </button>
+                          </div>
                           <button
                             type="button"
-                            onClick={() => toggleMistakeTag(customTag)}
-                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                            onClick={addCustomMistakeTag}
+                            class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium border border-slate-700"
                           >
-                            <span>{customTag}</span>
-                            <X size={10} />
+                            + Add
                           </button>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-
-                  <div class="flex gap-1.5">
-                    <input
-                      type="text"
-                      placeholder="Add custom mistake tag..."
-                      value={customMistakeInput()}
-                      onInput={(e) => setCustomMistakeInput(e.currentTarget.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          addCustomMistakeTag();
-                        }
-                      }}
-                      class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={addCustomMistakeTag}
-                      class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium border border-slate-700"
-                    >
-                      + Add
-                    </button>
-                  </div>
-                </div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
                 <div>
                   <label class="block text-slate-400 mb-1">Journal Notes</label>
                   <textarea

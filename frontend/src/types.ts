@@ -316,6 +316,19 @@ export interface TradeDeal {
   management_grade?: TradeGrade;
 }
 
+export type ReviewTagKind = 'setup' | 'exit' | 'mistake';
+export type MistakeCategory = 'entry' | 'exit_mgmt';
+
+export interface ReviewTag {
+  id: number;
+  kind: ReviewTagKind;
+  name: string;
+  category: MistakeCategory | '';
+  is_default: boolean;
+  created_at: number;
+  usage_count: number;
+}
+
 export interface ExcursionTrade {
   ticket: number;
   symbol: string;

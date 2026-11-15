@@ -1,7 +1,15 @@
 import sqlite3
 import os
 import json
+import time
 from typing import List, Dict, Any, Optional
+
+VALID_TAG_KINDS = {"setup", "exit", "mistake"}
+VALID_MISTAKE_CATEGORIES = {"entry", "exit_mgmt"}
+
+DEFAULT_EXIT_TAG_PRESETS = ["TP", "SL", "BE", "Trailing", "Manual"]
+DEFAULT_ENTRY_MISTAKE_PRESETS = ["FOMO", "Chased", "Early Entry", "Counter-Trend", "No Setup"]
+DEFAULT_EXIT_MISTAKE_PRESETS = ["Moved SL", "Early Exit", "Hesitated", "Oversized", "Revenge"]
 
 DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 DB_PATH = os.path.join(DB_DIR, "portfolio.db")
@@ -126,6 +134,19 @@ def init_db():
     )
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS review_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,
+        name TEXT NOT NULL,
+        name_lower TEXT NOT NULL,
+        category TEXT DEFAULT '',
+        is_default INTEGER DEFAULT 0,
+        created_at INTEGER DEFAULT 0,
+        UNIQUE(kind, name_lower)
+    )
+    """)
+
     existing_note_cols = [row[1] for row in cursor.execute("PRAGMA table_info(trade_notes)").fetchall()]
     for col_name, col_def in [
         ("exit_tag", "TEXT DEFAULT ''"),
@@ -139,6 +160,9 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_acc_time ON deals(account_id, time)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_acc_time ON equity_snapshots(account_id, timestamp)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_acc ON trade_notes(account_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_review_tags_kind ON review_tags(kind)")
+
+    _seed_and_backfill_review_tags(cursor)
     
     conn.commit()
     conn.close()
@@ -301,6 +325,73 @@ def get_trade_notes(account_id: int) -> Dict[int, Dict[str, Any]]:
     return rows
 
 
+def _parse_tag_list(raw: Optional[str]) -> List[str]:
+    if not raw:
+        return []
+    seen = set()
+    out: List[str] = []
+    for part in str(raw).split(","):
+        trimmed = part.strip()
+        if not trimmed:
+            continue
+        key = trimmed.lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(trimmed)
+    return out
+
+
+def _normalize_tag_category(kind: str, category: Optional[str]) -> str:
+    if kind != "mistake":
+        return ""
+    cat = (category or "").strip().lower()
+    return cat if cat in VALID_MISTAKE_CATEGORIES else "entry"
+
+
+def _register_tag_cursor(
+    cursor: sqlite3.Cursor,
+    kind: str,
+    name: str,
+    category: str = "",
+    is_default: int = 0,
+):
+    trimmed = (name or "").strip()
+    if not trimmed or kind not in VALID_TAG_KINDS:
+        return
+    cat = _normalize_tag_category(kind, category)
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO review_tags (kind, name, name_lower, category, is_default, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (kind, trimmed, trimmed.lower(), cat, is_default, int(time.time())),
+    )
+
+
+def _seed_and_backfill_review_tags(cursor: sqlite3.Cursor):
+    count_row = cursor.execute("SELECT COUNT(*) AS cnt FROM review_tags").fetchone()
+    if count_row and int(count_row["cnt"]) > 0:
+        return
+
+    for preset in DEFAULT_EXIT_TAG_PRESETS:
+        _register_tag_cursor(cursor, "exit", preset, "", is_default=1)
+    for preset in DEFAULT_ENTRY_MISTAKE_PRESETS:
+        _register_tag_cursor(cursor, "mistake", preset, "entry", is_default=1)
+    for preset in DEFAULT_EXIT_MISTAKE_PRESETS:
+        _register_tag_cursor(cursor, "mistake", preset, "exit_mgmt", is_default=1)
+
+    rows = cursor.execute("SELECT setup_tag, exit_tag, mistake_tag FROM trade_notes").fetchall()
+    for row in rows:
+        setup_val = (row["setup_tag"] or "").strip()
+        if setup_val:
+            _register_tag_cursor(cursor, "setup", setup_val, "", is_default=0)
+        exit_val = (row["exit_tag"] or "").strip()
+        if exit_val:
+            _register_tag_cursor(cursor, "exit", exit_val, "", is_default=0)
+        for m_val in _parse_tag_list(row["mistake_tag"]):
+            _register_tag_cursor(cursor, "mistake", m_val, "entry", is_default=0)
+
+
 def upsert_trade_note(
     ticket: int,
     account_id: int,
@@ -313,23 +404,264 @@ def upsert_trade_note(
     management_grade: str = "",
     updated_at: int = 0,
 ):
+    clean_setup = (setup_tag or "").strip()
+    clean_exit = (exit_tag or "").strip()
+    clean_mistakes = _parse_tag_list(mistake_tag)
+    clean_mistake_str = ", ".join(clean_mistakes)
+
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-    INSERT INTO trade_notes (ticket, account_id, note, setup_tag, mistake_tag, exit_tag, entry_grade, execution_grade, management_grade, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(ticket) DO UPDATE SET
-        note = excluded.note,
-        setup_tag = excluded.setup_tag,
-        mistake_tag = excluded.mistake_tag,
-        exit_tag = excluded.exit_tag,
-        entry_grade = excluded.entry_grade,
-        execution_grade = excluded.execution_grade,
-        management_grade = excluded.management_grade,
-        updated_at = excluded.updated_at
-    """, (ticket, account_id, note, setup_tag, mistake_tag, exit_tag, entry_grade, execution_grade, management_grade, updated_at))
-    conn.commit()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO trade_notes (ticket, account_id, note, setup_tag, mistake_tag, exit_tag, entry_grade, execution_grade, management_grade, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(ticket) DO UPDATE SET
+            note = excluded.note,
+            setup_tag = excluded.setup_tag,
+            mistake_tag = excluded.mistake_tag,
+            exit_tag = excluded.exit_tag,
+            entry_grade = excluded.entry_grade,
+            execution_grade = excluded.execution_grade,
+            management_grade = excluded.management_grade,
+            updated_at = excluded.updated_at
+        """, (ticket, account_id, note, clean_setup, clean_mistake_str, clean_exit, entry_grade, execution_grade, management_grade, updated_at))
+
+        if clean_setup:
+            _register_tag_cursor(cursor, "setup", clean_setup, "")
+        if clean_exit:
+            _register_tag_cursor(cursor, "exit", clean_exit, "")
+        for m in clean_mistakes:
+            _register_tag_cursor(cursor, "mistake", m, "entry")
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _compute_tag_usage_counts(cursor: sqlite3.Cursor) -> Dict[tuple, int]:
+    counts: Dict[tuple, int] = {}
+    rows = cursor.execute("SELECT setup_tag, exit_tag, mistake_tag FROM trade_notes").fetchall()
+    for row in rows:
+        s = (row["setup_tag"] or "").strip().lower()
+        if s:
+            counts[("setup", s)] = counts.get(("setup", s), 0) + 1
+        e = (row["exit_tag"] or "").strip().lower()
+        if e:
+            counts[("exit", e)] = counts.get(("exit", e), 0) + 1
+        for m in _parse_tag_list(row["mistake_tag"]):
+            mk = m.lower()
+            counts[("mistake", mk)] = counts.get(("mistake", mk), 0) + 1
+    return counts
+
+
+def get_review_tags() -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        counts = _compute_tag_usage_counts(cursor)
+        rows = cursor.execute(
+            "SELECT id, kind, name, category, is_default, created_at FROM review_tags ORDER BY kind ASC, category ASC, id ASC"
+        ).fetchall()
+        result: List[Dict[str, Any]] = []
+        for r in rows:
+            item = dict(r)
+            item["is_default"] = bool(item["is_default"])
+            item["usage_count"] = counts.get((item["kind"], item["name"].strip().lower()), 0)
+            result.append(item)
+        return result
+    finally:
+        conn.close()
+
+
+def create_review_tag(kind: str, name: str, category: str = "") -> Dict[str, Any]:
+    kind_norm = (kind or "").strip().lower()
+    if kind_norm not in VALID_TAG_KINDS:
+        raise ValueError(f"Invalid tag kind: {kind}")
+    clean_name = (name or "").strip()
+    if not clean_name:
+        raise ValueError("Tag name cannot be empty")
+    cat = _normalize_tag_category(kind_norm, category)
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        existing = cursor.execute(
+            "SELECT id, kind, name, category, is_default, created_at FROM review_tags WHERE kind = ? AND name_lower = ?",
+            (kind_norm, clean_name.lower()),
+        ).fetchone()
+        if existing:
+            item = dict(existing)
+            item["is_default"] = bool(item["is_default"])
+            counts = _compute_tag_usage_counts(cursor)
+            item["usage_count"] = counts.get((kind_norm, clean_name.lower()), 0)
+            return item
+
+        cursor.execute(
+            """
+            INSERT INTO review_tags (kind, name, name_lower, category, is_default, created_at)
+            VALUES (?, ?, ?, ?, 0, ?)
+            """,
+            (kind_norm, clean_name, clean_name.lower(), cat, int(time.time())),
+        )
+        new_id = cursor.lastrowid
+        conn.commit()
+        row = cursor.execute(
+            "SELECT id, kind, name, category, is_default, created_at FROM review_tags WHERE id = ?",
+            (new_id,),
+        ).fetchone()
+        item = dict(row)
+        item["is_default"] = bool(item["is_default"])
+        counts = _compute_tag_usage_counts(cursor)
+        item["usage_count"] = counts.get((kind_norm, clean_name.lower()), 0)
+        return item
+    finally:
+        conn.close()
+
+
+def _rename_tag_in_notes(cursor: sqlite3.Cursor, kind: str, old_lower: str, new_name: str) -> int:
+    affected = 0
+    if kind in ("setup", "exit"):
+        col = "setup_tag" if kind == "setup" else "exit_tag"
+        rows = cursor.execute(f"SELECT ticket, {col} FROM trade_notes WHERE {col} != ''").fetchall()
+        for r in rows:
+            val = (r[col] or "").strip()
+            if val.lower() == old_lower and val != new_name:
+                cursor.execute(f"UPDATE trade_notes SET {col} = ? WHERE ticket = ?", (new_name, r["ticket"]))
+                affected += 1
+    elif kind == "mistake":
+        rows = cursor.execute("SELECT ticket, mistake_tag FROM trade_notes WHERE mistake_tag != ''").fetchall()
+        new_lower = new_name.lower()
+        for r in rows:
+            tags = _parse_tag_list(r["mistake_tag"])
+            changed = False
+            out: List[str] = []
+            seen = set()
+            for t in tags:
+                tl = t.lower()
+                if tl == old_lower:
+                    if t != new_name:
+                        changed = True
+                    if new_lower not in seen:
+                        seen.add(new_lower)
+                        out.append(new_name)
+                    else:
+                        changed = True
+                else:
+                    if tl not in seen:
+                        seen.add(tl)
+                        out.append(t)
+            if changed:
+                cursor.execute(
+                    "UPDATE trade_notes SET mistake_tag = ? WHERE ticket = ?",
+                    (", ".join(out), r["ticket"]),
+                )
+                affected += 1
+    return affected
+
+
+def update_review_tag(tag_id: int, name: str, category: Optional[str] = None) -> Dict[str, Any]:
+    clean_name = (name or "").strip()
+    if not clean_name:
+        raise ValueError("Tag name cannot be empty")
+    new_lower = clean_name.lower()
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        current = cursor.execute(
+            "SELECT id, kind, name, name_lower, category, is_default, created_at FROM review_tags WHERE id = ?",
+            (tag_id,),
+        ).fetchone()
+        if not current:
+            raise ValueError("Tag not found")
+
+        kind = current["kind"]
+        old_name = current["name"]
+        old_lower = current["name_lower"]
+        next_cat = (
+            _normalize_tag_category(kind, category)
+            if category is not None
+            else current["category"]
+        )
+
+        collision = cursor.execute(
+            "SELECT id, name, category FROM review_tags WHERE kind = ? AND name_lower = ? AND id != ?",
+            (kind, new_lower, tag_id),
+        ).fetchone()
+
+        if collision:
+            target_id = collision["id"]
+            # Merge into existing target tag
+            _rename_tag_in_notes(cursor, kind, old_lower, collision["name"])
+            if kind == "mistake" and category is not None:
+                cursor.execute("UPDATE review_tags SET category = ? WHERE id = ?", (next_cat, target_id))
+            cursor.execute("DELETE FROM review_tags WHERE id = ?", (tag_id,))
+            conn.commit()
+            row = cursor.execute(
+                "SELECT id, kind, name, category, is_default, created_at FROM review_tags WHERE id = ?",
+                (target_id,),
+            ).fetchone()
+        else:
+            cursor.execute(
+                "UPDATE review_tags SET name = ?, name_lower = ?, category = ? WHERE id = ?",
+                (clean_name, new_lower, next_cat, tag_id),
+            )
+            if old_name != clean_name:
+                _rename_tag_in_notes(cursor, kind, old_lower, clean_name)
+            conn.commit()
+            row = cursor.execute(
+                "SELECT id, kind, name, category, is_default, created_at FROM review_tags WHERE id = ?",
+                (tag_id,),
+            ).fetchone()
+
+        item = dict(row)
+        item["is_default"] = bool(item["is_default"])
+        counts = _compute_tag_usage_counts(cursor)
+        item["usage_count"] = counts.get((item["kind"], item["name"].strip().lower()), 0)
+        return item
+    finally:
+        conn.close()
+
+
+def delete_review_tag(tag_id: int) -> Dict[str, Any]:
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        current = cursor.execute(
+            "SELECT id, kind, name, name_lower FROM review_tags WHERE id = ?",
+            (tag_id,),
+        ).fetchone()
+        if not current:
+            raise ValueError("Tag not found")
+
+        kind = current["kind"]
+        name_lower = current["name_lower"]
+        affected = 0
+
+        if kind in ("setup", "exit"):
+            col = "setup_tag" if kind == "setup" else "exit_tag"
+            rows = cursor.execute(f"SELECT ticket, {col} FROM trade_notes WHERE {col} != ''").fetchall()
+            for r in rows:
+                if (r[col] or "").strip().lower() == name_lower:
+                    cursor.execute(f"UPDATE trade_notes SET {col} = '' WHERE ticket = ?", (r["ticket"],))
+                    affected += 1
+        elif kind == "mistake":
+            rows = cursor.execute("SELECT ticket, mistake_tag FROM trade_notes WHERE mistake_tag != ''").fetchall()
+            for r in rows:
+                tags = _parse_tag_list(r["mistake_tag"])
+                filtered = [t for t in tags if t.lower() != name_lower]
+                if len(filtered) != len(tags):
+                    cursor.execute(
+                        "UPDATE trade_notes SET mistake_tag = ? WHERE ticket = ?",
+                        (", ".join(filtered), r["ticket"]),
+                    )
+                    affected += 1
+
+        cursor.execute("DELETE FROM review_tags WHERE id = ?", (tag_id,))
+        conn.commit()
+        return {"deleted": True, "id": tag_id, "affected_trades": affected}
+    finally:
+        conn.close()
 
 
 def get_deal_by_ticket(ticket: int) -> Optional[Dict[str, Any]]:

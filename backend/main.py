@@ -20,6 +20,10 @@ from backend.database import (
     append_snapshot,
     get_trade_notes,
     upsert_trade_note,
+    get_review_tags,
+    create_review_tag,
+    update_review_tag,
+    delete_review_tag,
     get_deal_by_ticket,
     get_trade_candles,
     upsert_trade_candles,
@@ -188,6 +192,50 @@ def save_trade_note(payload: TradeNotePayload):
         updated_at=int(time.time()),
     )
     return {"status": "ok", "ticket": payload.ticket}
+
+
+class CreateTagPayload(BaseModel):
+    kind: str
+    name: str
+    category: str = ""
+
+
+class UpdateTagPayload(BaseModel):
+    name: str
+    category: Optional[str] = None
+
+
+@app.get("/api/tags")
+def list_tags():
+    return {"tags": get_review_tags()}
+
+
+@app.post("/api/tags")
+def create_tag_endpoint(payload: CreateTagPayload):
+    try:
+        tag = create_review_tag(kind=payload.kind, name=payload.name, category=payload.category)
+        return {"status": "ok", "tag": tag}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.patch("/api/tags/{tag_id}")
+def update_tag_endpoint(tag_id: int, payload: UpdateTagPayload):
+    try:
+        tag = update_review_tag(tag_id=tag_id, name=payload.name, category=payload.category)
+        return {"status": "ok", "tag": tag}
+    except ValueError as e:
+        status = 404 if "not found" in str(e).lower() else 400
+        raise HTTPException(status_code=status, detail=str(e))
+
+
+@app.delete("/api/tags/{tag_id}")
+def delete_tag_endpoint(tag_id: int):
+    try:
+        result = delete_review_tag(tag_id=tag_id)
+        return {"status": "ok", **result}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @app.get("/api/trades/{ticket}/candles")
