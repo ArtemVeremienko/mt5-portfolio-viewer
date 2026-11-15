@@ -26,7 +26,10 @@ import {
   Activity,
   Calendar as CalendarIcon,
   BarChart3,
-  CalendarDays
+  CalendarDays,
+  Filter,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-solid';
 
 export const App: Component = () => {
@@ -40,7 +43,14 @@ export const App: Component = () => {
   const [isWsConnected, setIsWsConnected] = createSignal<boolean>(false);
   const [isSyncing, setIsSyncing] = createSignal<boolean>(false);
   const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'excursions' | 'calendar' | 'advanced' | 'trades'>('overview');
-  const [calendarSubTab, setCalendarSubTab] = createSignal<'monthly' | 'daily'>('monthly');
+  const [calendarSubTab, setCalendarSubTab] = createSignal<'daily' | 'monthly'>('daily');
+  const [showFilters, setShowFilters] = createSignal<boolean>(false);
+  const [sidebarVisible, setSidebarVisible] = createSignal<boolean>(true);
+
+  const selectMainTab = (tab: 'overview' | 'vantharp' | 'excursions' | 'calendar' | 'advanced' | 'trades') => {
+    setMainTab(tab);
+    setSidebarVisible(tab === 'overview');
+  };
 
   // Custom Analysis Global Filters
   const [filterStartDate, setFilterStartDate] = createSignal<string>('');
@@ -275,13 +285,15 @@ export const App: Component = () => {
       <main class="max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-6 flex-1 flex flex-col lg:flex-row gap-6">
         
         {/* Left Column: Fixed Sidebar Stats */}
-        <div class="flex-shrink-0">
-          <SidebarStats
-            stats={portfolioData()?.stats || null}
-            account={activeAccount()}
-            mode={metricMode()}
-          />
-        </div>
+        <Show when={sidebarVisible()}>
+          <div class="flex-shrink-0">
+            <SidebarStats
+              stats={portfolioData()?.stats || null}
+              account={activeAccount()}
+              mode={metricMode()}
+            />
+          </div>
+        </Show>
 
         {/* Right Column: Dashboard Navigation & Content */}
         <div class="flex-1 flex flex-col gap-5 min-w-0">
@@ -294,7 +306,7 @@ export const App: Component = () => {
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
               }`}
-              onClick={() => setMainTab('overview')}
+              onClick={() => selectMainTab('overview')}
             >
               <LineChart size={15} />
               <span>Performance</span>
@@ -306,7 +318,7 @@ export const App: Component = () => {
                   ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/30'
                   : 'text-purple-400 hover:text-purple-200 hover:bg-purple-950/30'
               }`}
-              onClick={() => setMainTab('vantharp')}
+              onClick={() => selectMainTab('vantharp')}
             >
               <Award size={15} />
               <span>Van Tharp SQN</span>
@@ -318,7 +330,7 @@ export const App: Component = () => {
                   ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-600/30'
                   : 'text-cyan-400 hover:text-cyan-200 hover:bg-cyan-950/30'
               }`}
-              onClick={() => setMainTab('excursions')}
+              onClick={() => selectMainTab('excursions')}
             >
               <Activity size={15} />
               <span>MAE / MFE</span>
@@ -330,7 +342,7 @@ export const App: Component = () => {
                   ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30'
                   : 'text-emerald-400 hover:text-emerald-200 hover:bg-emerald-950/30'
               }`}
-              onClick={() => setMainTab('calendar')}
+              onClick={() => selectMainTab('calendar')}
             >
               <CalendarDays size={15} />
               <span>Calendar & Periods</span>
@@ -342,7 +354,7 @@ export const App: Component = () => {
                   ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-blue-400 hover:text-blue-200 hover:bg-blue-950/30'
               }`}
-              onClick={() => setMainTab('advanced')}
+              onClick={() => selectMainTab('advanced')}
             >
               <BarChart3 size={15} />
               <span>Advanced Stats</span>
@@ -354,11 +366,46 @@ export const App: Component = () => {
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
               }`}
-              onClick={() => setMainTab('trades')}
+              onClick={() => selectMainTab('trades')}
             >
               <Layers size={15} />
               <span>Trades ({portfolioData()?.stats.total_trades || 0})</span>
             </button>
+
+            <div class="ml-auto flex items-center gap-1 pl-2 border-l border-slate-800 shrink-0">
+              <button
+                type="button"
+                onClick={() => setSidebarVisible(!sidebarVisible())}
+                title={sidebarVisible() ? 'Hide Portfolio Sidebar' : 'Show Portfolio Sidebar'}
+                aria-label={sidebarVisible() ? 'Hide Portfolio Sidebar' : 'Show Portfolio Sidebar'}
+                class={`p-2 rounded-xl text-xs transition-all ${
+                  sidebarVisible()
+                    ? 'bg-slate-800 text-slate-200 border border-slate-700'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                }`}
+              >
+                <Show when={sidebarVisible()} fallback={<PanelLeftOpen size={15} />}>
+                  <PanelLeftClose size={15} />
+                </Show>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowFilters(!showFilters())}
+                title={showFilters() || hasActiveFilters() ? 'Hide Filters' : 'Show Filters'}
+                aria-label={showFilters() || hasActiveFilters() ? 'Hide Filters' : 'Show Filters'}
+                class={`relative p-2 rounded-xl text-xs transition-all ${
+                  showFilters() || hasActiveFilters()
+                    ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
+                }`}
+              >
+                <Filter size={15} />
+                <Show when={hasActiveFilters()}>
+                  <span class="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-blue-400" />
+                </Show>
+              </button>
+            </div>
           </div>
 
           {/* Error / Loading Banner */}
@@ -382,7 +429,8 @@ export const App: Component = () => {
           </Show>
 
           {/* Custom Analysis Global Filter Bar */}
-          <div class="flex flex-wrap items-center gap-2 bg-slate-900/70 border border-slate-800/90 rounded-2xl px-3.5 py-2.5 text-xs">
+          <Show when={showFilters() || hasActiveFilters()}>
+            <div class="flex flex-wrap items-center gap-2 bg-slate-900/70 border border-slate-800/90 rounded-2xl px-3.5 py-2.5 text-xs">
             <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mr-1">Filters:</span>
             <input
               id="filter-start-date"
@@ -485,7 +533,8 @@ export const App: Component = () => {
                 Reset
               </button>
             </Show>
-          </div>
+            </div>
+          </Show>
 
           {/* Tab 1: Overview & Interactive Curves */}
           <Show when={mainTab() === 'overview'}>
@@ -646,18 +695,6 @@ export const App: Component = () => {
               {/* Periodic Sub-tab Switcher Bar */}
               <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl shadow-md backdrop-blur-sm">
                 <button
-                  onClick={() => setCalendarSubTab('monthly')}
-                  class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                    calendarSubTab() === 'monthly'
-                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-600/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                  }`}
-                >
-                  <CalendarDays size={15} />
-                  <span>Monthly Analytics</span>
-                </button>
-
-                <button
                   onClick={() => setCalendarSubTab('daily')}
                   class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
                     calendarSubTab() === 'daily'
@@ -668,20 +705,32 @@ export const App: Component = () => {
                   <CalendarIcon size={15} />
                   <span>Daily Calendar</span>
                 </button>
+
+                <button
+                  onClick={() => setCalendarSubTab('monthly')}
+                  class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    calendarSubTab() === 'monthly'
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-600/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <CalendarDays size={15} />
+                  <span>Monthly Analytics</span>
+                </button>
               </div>
 
-              {/* Sub-view 1: Monthly Analytics (4-Quadrant) */}
-              <Show when={calendarSubTab() === 'monthly'}>
-                <MonthlyAnalytics
-                  monthlyAnalytics={portfolioData()?.monthly_analytics || []}
+              {/* Sub-view 1: Daily Calendar */}
+              <Show when={calendarSubTab() === 'daily'}>
+                <CalendarView
+                  days={portfolioData()?.calendar_days || []}
                   mode={metricMode()}
                 />
               </Show>
 
-              {/* Sub-view 2: Daily Calendar */}
-              <Show when={calendarSubTab() === 'daily'}>
-                <CalendarView
-                  days={portfolioData()?.calendar_days || []}
+              {/* Sub-view 2: Monthly Analytics (4-Quadrant) */}
+              <Show when={calendarSubTab() === 'monthly'}>
+                <MonthlyAnalytics
+                  monthlyAnalytics={portfolioData()?.monthly_analytics || []}
                   mode={metricMode()}
                 />
               </Show>
