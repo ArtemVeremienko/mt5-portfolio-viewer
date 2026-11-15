@@ -10,7 +10,6 @@ import { Header } from './components/Header';
 import { SidebarStats } from './components/SidebarStats';
 import { PerformanceChart } from './components/PerformanceChart';
 import { MonthlyHeatmap } from './components/MonthlyHeatmap';
-import { VanTharpPanel } from './components/VanTharpPanel';
 import { TradingStats } from './components/TradingStats';
 import { TradesTable } from './components/TradesTable';
 import { ExcursionPanel } from './components/ExcursionPanel';
@@ -20,7 +19,6 @@ import { MonthlyAnalytics } from './components/MonthlyAnalytics';
 import { getStorageItem, setStorageItem } from './utils/storage';
 import { 
   LineChart, 
-  Award, 
   Layers, 
   PieChart,
   Activity,
@@ -40,7 +38,7 @@ export const App: Component = () => {
   const [isMt5Connected, setIsMt5Connected] = createSignal<boolean>(false);
   const [isWsConnected, setIsWsConnected] = createSignal<boolean>(false);
   const [isSyncing, setIsSyncing] = createSignal<boolean>(false);
-  const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'excursions' | 'calendar' | 'advanced' | 'trades'>('overview');
+  const [mainTab, setMainTab] = createSignal<'overview' | 'advanced' | 'excursions' | 'calendar' | 'trades'>('overview');
   const [calendarSubTab, setCalendarSubTab] = createSignal<'daily' | 'monthly'>('daily');
   const [showFilters, setShowFilters] = createSignal<boolean>(false);
 
@@ -293,14 +291,14 @@ export const App: Component = () => {
 
             <button
               class={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                mainTab() === 'vantharp'
-                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/30'
-                  : 'text-purple-400 hover:text-purple-200 hover:bg-purple-950/30'
+                mainTab() === 'advanced'
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                  : 'text-blue-400 hover:text-blue-200 hover:bg-blue-950/30'
               }`}
-              onClick={() => setMainTab('vantharp')}
+              onClick={() => setMainTab('advanced')}
             >
-              <Award size={15} />
-              <span>Van Tharp SQN</span>
+              <BarChart3 size={15} />
+              <span>Advanced Stats</span>
             </button>
 
             <button
@@ -325,18 +323,6 @@ export const App: Component = () => {
             >
               <CalendarDays size={15} />
               <span>Calendar & Periods</span>
-            </button>
-
-            <button
-              class={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                mainTab() === 'advanced'
-                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
-                  : 'text-blue-400 hover:text-blue-200 hover:bg-blue-950/30'
-              }`}
-              onClick={() => setMainTab('advanced')}
-            >
-              <BarChart3 size={15} />
-              <span>Advanced Stats</span>
             </button>
 
             <button
@@ -611,7 +597,7 @@ export const App: Component = () => {
                 </div>
               );
             })()}
-            <div class="flex flex-col lg:flex-row gap-5 items-start">
+            <div class="flex flex-col lg:flex-row gap-5 items-stretch">
               <div class="flex-shrink-0 w-full lg:w-auto">
                 <SidebarStats
                   stats={portfolioData()?.stats || null}
@@ -619,7 +605,7 @@ export const App: Component = () => {
                   mode={metricMode()}
                 />
               </div>
-              <div class="flex-1 min-w-0 w-full">
+              <div class="flex-1 min-w-0 w-full flex flex-col">
                 <PerformanceChart
                   curves={portfolioData()?.curves || []}
                   mode={metricMode()}
@@ -636,14 +622,6 @@ export const App: Component = () => {
               hourly={portfolioData()?.hourly_stats || []}
               days={portfolioData()?.day_of_week_stats || []}
               mode={metricMode()}
-            />
-          </Show>
-
-          {/* Tab 2: Van Tharp R-Multiple & SQN */}
-          <Show when={mainTab() === 'vantharp'}>
-            <VanTharpPanel
-              stats={portfolioData()?.stats || null}
-              rDistribution={portfolioData()?.r_distribution || []}
             />
           </Show>
 
@@ -714,6 +692,7 @@ export const App: Component = () => {
           <Show when={mainTab() === 'advanced'}>
             <AdvancedStats
               stats={portfolioData()?.stats || null}
+              rDistribution={portfolioData()?.r_distribution || []}
               currencySummary={portfolioData()?.currency_summary || []}
               hourly={portfolioData()?.hourly_stats || []}
               days={portfolioData()?.day_of_week_stats || []}

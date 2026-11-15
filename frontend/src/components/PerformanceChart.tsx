@@ -614,7 +614,10 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     initChart();
     const handleResize = () => {
       if (chart && chartContainer) {
-        chart.applyOptions({ width: chartContainer.clientWidth });
+        chart.applyOptions({
+          width: chartContainer.clientWidth,
+          height: chartContainer.clientHeight,
+        });
       }
     };
     window.addEventListener('resize', handleResize);
@@ -698,7 +701,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   });
 
   return (
-    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl backdrop-blur-sm flex flex-col gap-3">
+    <div class="h-full bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl backdrop-blur-sm flex flex-col gap-3">
       
       {/* Top Header Controls: Views & Timeframe */}
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
@@ -937,7 +940,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       </div>
 
       {/* Lightweight Chart Canvas Container with Anchored Tooltip */}
-      <div class="w-full h-[375px] rounded-xl relative border border-slate-950 shadow-inner">
+      <div class="w-full flex-1 min-h-[375px] rounded-xl relative border border-slate-950 shadow-inner">
         <div ref={chartContainer} class="w-full h-full rounded-xl overflow-hidden" />
         
         <Show when={barTooltip()}>

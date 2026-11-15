@@ -1,4 +1,4 @@
-import { Component, createSignal, For, Show } from 'solid-js';
+import { Component, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { 
   PortfolioStats, 
   CurrencySummaryItem, 
@@ -6,9 +6,11 @@ import {
   DayOfWeekStat, 
   RiskOfRuinItem, 
   DurationTrade, 
+  RDistributionBucket,
   MetricMode 
 } from '../types';
 import { 
+  Award,
   BarChart3, 
   Clock, 
   Calendar, 
@@ -16,9 +18,13 @@ import {
   Hourglass, 
   Layers
 } from 'lucide-solid';
+import { VanTharpPanel } from './VanTharpPanel';
+
+type AdvSectionId = 'sqn' | 'trades' | 'summary' | 'hourly' | 'daily' | 'ruin' | 'duration';
 
 interface AdvancedStatsProps {
   stats: PortfolioStats | null;
+  rDistribution?: RDistributionBucket[];
   currencySummary: CurrencySummaryItem[];
   hourly: HourlyStat[];
   days: DayOfWeekStat[];
@@ -28,9 +34,37 @@ interface AdvancedStatsProps {
 }
 
 export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
-  const [activeSubTab, setActiveSubTab] = createSignal<
-    'trades' | 'summary' | 'hourly' | 'daily' | 'ruin' | 'duration'
-  >('trades');
+  const [activeSection, setActiveSection] = createSignal<AdvSectionId>('sqn');
+
+  const scrollToSection = (id: AdvSectionId) => {
+    setActiveSection(id);
+    const el = document.getElementById(`adv-${id}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  onMount(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const ids: AdvSectionId[] = ['sqn', 'trades', 'summary', 'hourly', 'daily', 'ruin', 'duration'];
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const rawId = entry.target.id.replace('adv-', '') as AdvSectionId;
+            setActiveSection(rawId);
+            break;
+          }
+        }
+      },
+      { rootMargin: '-120px 0px -60% 0px', threshold: 0.05 }
+    );
+    for (const id of ids) {
+      const el = document.getElementById(`adv-${id}`);
+      if (el) observer.observe(el);
+    }
+    onCleanup(() => observer.disconnect());
+  });
 
   // Hourly chart display toggle: trade counts vs net profit
   const [hourlyViewMode, setHourlyViewMode] = createSignal<'counts' | 'profit'>('counts');
@@ -100,87 +134,58 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
     return withTrades.length > 0 ? withTrades : list;
   };
 
+  const menuItems: Array<{ id: AdvSectionId; label: string; icon: any }> = [
+    { id: 'sqn', label: 'Van Tharp SQN', icon: Award },
+    { id: 'trades', label: 'Trades', icon: BarChart3 },
+    { id: 'summary', label: 'Summary', icon: Layers },
+    { id: 'hourly', label: 'Hourly', icon: Clock },
+    { id: 'daily', label: 'Daily', icon: Calendar },
+    { id: 'ruin', label: 'Risk of Ruin', icon: ShieldAlert },
+    { id: 'duration', label: 'Duration', icon: Hourglass },
+  ];
+
   return (
-    <div class="space-y-4">
-      {/* Sub-tab Navigation Bar */}
-      <div class="flex items-center gap-1.5 bg-slate-900/95 border border-slate-800 p-1.5 rounded-2xl shadow-xl backdrop-blur-sm overflow-x-auto">
-        <button
-          onClick={() => setActiveSubTab('trades')}
-          class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeSubTab() === 'trades'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-          }`}
-        >
-          <BarChart3 size={15} />
-          <span>Trades</span>
-        </button>
+    <div class="flex flex-col lg:flex-row gap-6 items-start">
+      {/* Left Sticky Section Menu */}
+      <aside class="w-full lg:w-52 shrink-0 lg:sticky lg:top-20 bg-slate-900/95 border border-slate-800 p-2 rounded-2xl shadow-xl backdrop-blur-sm">
+        <div class="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          Statistics Groups
+        </div>
+        <nav class="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible">
+          <For each={menuItems}>
+            {(item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  type="button"
+                  onClick={() => scrollToSection(item.id)}
+                  class={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap text-left ${
+                    activeSection() === item.id
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <Icon size={15} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            }}
+          </For>
+        </nav>
+      </aside>
 
-        <button
-          onClick={() => setActiveSubTab('summary')}
-          class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeSubTab() === 'summary'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-          }`}
-        >
-          <Layers size={15} />
-          <span>Summary</span>
-        </button>
+      {/* Main Scrollable Sections */}
+      <div class="flex-1 min-w-0 w-full space-y-6">
+        {/* 0. VAN THARP SQN */}
+        <section id="adv-sqn" class="scroll-mt-24">
+          <VanTharpPanel
+            stats={props.stats}
+            rDistribution={props.rDistribution || []}
+          />
+        </section>
 
-        <button
-          onClick={() => setActiveSubTab('hourly')}
-          class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeSubTab() === 'hourly'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-          }`}
-        >
-          <Clock size={15} />
-          <span>Hourly</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('daily')}
-          class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeSubTab() === 'daily'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-          }`}
-        >
-          <Calendar size={15} />
-          <span>Daily</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('ruin')}
-          class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeSubTab() === 'ruin'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-          }`}
-        >
-          <ShieldAlert size={15} />
-          <span>Risk of Ruin</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('duration')}
-          class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeSubTab() === 'duration'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-          }`}
-        >
-          <Hourglass size={15} />
-          <span>Duration</span>
-        </button>
-      </div>
-
-      {/* ------------------------------------------------------------- */}
-      {/* 1. TRADES TAB (Clean table-like UI, no horizontal line overlap)*/}
-      {/* ------------------------------------------------------------- */}
-      <Show when={activeSubTab() === 'trades'}>
+        {/* 1. TRADES */}
+        <section id="adv-trades" class="scroll-mt-24">
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-sm">
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
             
@@ -415,12 +420,12 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
 
           </div>
         </div>
-      </Show>
+        </section>
 
       {/* ------------------------------------------------------------- */}
       {/* 2. SUMMARY TAB (Clear vertical separators between sections)   */}
       {/* ------------------------------------------------------------- */}
-      <Show when={activeSubTab() === 'summary'}>
+      <section id="adv-summary" class="scroll-mt-24">
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl backdrop-blur-sm overflow-x-auto">
           <table class="w-full text-left text-xs border-collapse">
             <thead>
@@ -524,12 +529,12 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
             </tbody>
           </table>
         </div>
-      </Show>
+      </section>
 
       {/* ------------------------------------------------------------- */}
       {/* 3. HOURLY TAB (Fitted to actual data with 1h buffer)          */}
       {/* ------------------------------------------------------------- */}
-      <Show when={activeSubTab() === 'hourly'}>
+      <section id="adv-hourly" class="scroll-mt-24">
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-sm space-y-4">
           <div class="flex items-center justify-between border-b border-slate-800 pb-3">
             <div>
@@ -780,12 +785,12 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
             );
           })()}
         </div>
-      </Show>
+      </section>
 
       {/* ------------------------------------------------------------- */}
       {/* 4. DAILY TAB (Empty days removed, fitting active trading days) */}
       {/* ------------------------------------------------------------- */}
-      <Show when={activeSubTab() === 'daily'}>
+      <section id="adv-daily" class="scroll-mt-24">
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-sm space-y-4">
           <div class="text-center">
             <h4 class="text-xs font-bold text-slate-200 uppercase tracking-wider">Winners Vs. Losers</h4>
@@ -909,12 +914,12 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
             );
           })()}
         </div>
-      </Show>
+      </section>
 
       {/* ------------------------------------------------------------- */}
       {/* 5. RISK OF RUIN TAB                                           */}
       {/* ------------------------------------------------------------- */}
-      <Show when={activeSubTab() === 'ruin'}>
+      <section id="adv-ruin" class="scroll-mt-24">
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-sm space-y-4">
           <div class="overflow-x-auto">
             <table class="w-full text-center border-collapse">
@@ -976,12 +981,12 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
             </p>
           </div>
         </div>
-      </Show>
+      </section>
 
       {/* ------------------------------------------------------------- */}
       {/* 6. DURATION TAB (Fixed floating non-jumping tooltips)         */}
       {/* ------------------------------------------------------------- */}
-      <Show when={activeSubTab() === 'duration'}>
+      <section id="adv-duration" class="scroll-mt-24">
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-sm space-y-4">
           <div class="text-center">
             <h4 class="text-xs font-bold text-slate-200 uppercase tracking-wider">Duration (Profit)</h4>
@@ -1109,7 +1114,6 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
             );
           })()}
         </div>
-      </Show>
 
       {/* Floating Hover Tooltip for Duration Scatter Plot (Zero Jumping) */}
       <Show when={hoveredDurationTrade()}>
@@ -1155,7 +1159,8 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
           </div>
         )}
       </Show>
-
+      </section>
+      </div>
     </div>
   );
 };
