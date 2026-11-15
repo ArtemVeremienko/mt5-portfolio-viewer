@@ -156,8 +156,8 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
           onClick={() => setActiveSubTab('ruin')}
           class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
             activeSubTab() === 'ruin'
-              ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md shadow-red-600/30'
-              : 'text-rose-400 hover:text-rose-200 hover:bg-rose-950/30'
+              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
           }`}
         >
           <ShieldAlert size={15} />
@@ -267,22 +267,34 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
               </div>
 
               <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                <span class="text-slate-400 font-medium">Best Trade ($):</span>
+                <span class="text-slate-400 font-medium">
+                  {props.mode === 'r' ? 'Best Trade (R):' : 'Best Trade ($):'}
+                </span>
                 <div class="font-mono">
                   <Show when={s()?.best_trade_date}>
                     <span class="text-slate-500 text-[11px] mr-1">({s()?.best_trade_date})</span>
                   </Show>
-                  <span class="font-bold text-emerald-400">+{s()?.best_trade?.toFixed(2) || '0.00'}</span>
+                  <span class="font-bold text-emerald-400">
+                    {props.mode === 'r'
+                      ? `+${(s()?.best_trade_r ?? 0).toFixed(2)}R`
+                      : `+${s()?.best_trade?.toFixed(2) || '0.00'}`}
+                  </span>
                 </div>
               </div>
 
               <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                <span class="text-slate-400 font-medium">Worst Trade ($):</span>
+                <span class="text-slate-400 font-medium">
+                  {props.mode === 'r' ? 'Worst Trade (R):' : 'Worst Trade ($):'}
+                </span>
                 <div class="font-mono">
                   <Show when={s()?.worst_trade_date}>
                     <span class="text-slate-500 text-[11px] mr-1">({s()?.worst_trade_date})</span>
                   </Show>
-                  <span class="font-bold text-rose-400">-{Math.abs(s()?.worst_trade || 0).toFixed(2)}</span>
+                  <span class="font-bold text-rose-400">
+                    {props.mode === 'r'
+                      ? `${(s()?.worst_trade_r ?? 0).toFixed(2)}R`
+                      : `-${Math.abs(s()?.worst_trade || 0).toFixed(2)}`}
+                  </span>
                 </div>
               </div>
 
@@ -322,10 +334,14 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
               </div>
 
               <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title="Standard deviation of trade net profits">
+                <span class="text-slate-400 font-medium pb-0.5 border-b border-dotted border-slate-500 hover:border-slate-300 cursor-help" title={props.mode === 'r' ? 'Standard deviation of trade R-multiples' : 'Standard deviation of trade net profits'}>
                   Standard Deviation:
                 </span>
-                <span class="font-bold text-white font-mono">${s()?.profit_std_dev?.toFixed(3) || '0.000'}</span>
+                <span class="font-bold text-white font-mono">
+                  {props.mode === 'r'
+                    ? `${(s()?.r_std_dev ?? 0).toFixed(2)}R`
+                    : `$${s()?.profit_std_dev?.toFixed(3) || '0.000'}`}
+                </span>
               </div>
 
               <div class="flex justify-between items-center py-2 px-2.5 rounded-lg border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
@@ -349,7 +365,9 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                   Expectancy:
                 </span>
                 <span class="font-bold text-slate-200 font-mono">
-                  {s()?.expectancy_pips?.toFixed(1) || '0.0'} Pips / ${s()?.expectancy?.toFixed(2) || '0.00'}
+                  {props.mode === 'r'
+                    ? `${(s()?.r_expectancy ?? 0) >= 0 ? '+' : ''}${(s()?.r_expectancy ?? 0).toFixed(2)}R`
+                    : `${s()?.expectancy_pips?.toFixed(1) || '0.0'} Pips / $${s()?.expectancy?.toFixed(2) || '0.00'}`}
                 </span>
               </div>
 
@@ -564,13 +582,27 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
                     <div>
                       <div class="font-bold text-slate-200">{sess.name}</div>
                       <div class="text-[10px] text-slate-500 font-mono">{sess.window}</div>
-                      <div class="text-[10px] text-slate-400 mt-1">{stats().trades} trades • {stats().wr.toFixed(0)}% WR</div>
+                      <div class="text-[10px] text-slate-400 mt-1">{stats().trades} {stats().trades === 1 ? 'trade' : 'trades'} • {stats().wr.toFixed(0)}% WR</div>
                     </div>
                     <div class="text-right font-mono">
-                      <div class={`font-bold ${stats().profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {stats().profit >= 0 ? '+$' : '-$'}{Math.abs(stats().profit).toFixed(2)}
-                      </div>
-                      <div class="text-[10px] text-purple-300">{stats().r >= 0 ? '+' : ''}{stats().r.toFixed(2)}R</div>
+                      <Show
+                        when={props.mode === 'r'}
+                        fallback={
+                          <>
+                            <div class={`font-bold ${stats().profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {stats().profit >= 0 ? '+$' : '-$'}{Math.abs(stats().profit).toFixed(2)}
+                            </div>
+                            <div class="text-[10px] text-purple-300">{stats().r >= 0 ? '+' : ''}{stats().r.toFixed(2)}R</div>
+                          </>
+                        }
+                      >
+                        <div class={`font-bold ${stats().r >= 0 ? 'text-purple-300' : 'text-rose-400'}`}>
+                          {stats().r >= 0 ? '+' : ''}{stats().r.toFixed(2)}R
+                        </div>
+                        <div class={`text-[10px] ${stats().profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {stats().profit >= 0 ? '+$' : '-$'}{Math.abs(stats().profit).toFixed(2)}
+                        </div>
+                      </Show>
                     </div>
                   </div>
                 );

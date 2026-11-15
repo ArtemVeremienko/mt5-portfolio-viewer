@@ -505,6 +505,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
       if (sTag) bump('setup', sTag, net, rMult);
       if (eTag) bump('exit', eTag, net, rMult);
       for (const mTag of parseTagList(t.mistake_tag)) {
+        if (mTag.toLowerCase() === 'none') continue;
         bump('mistake', mTag, net, rMult);
       }
     }
@@ -681,7 +682,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
 
         {/* Right Controls: Scope Toggle + Search Input */}
         <div class="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end">
-          <Show when={props.onSelectTradeScope}>
+          <Show when={props.onSelectTradeScope && (activeTab() === 'history' || activeTab() === 'playbook')}>
             <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs shadow-inner">
               <button
                 class={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
@@ -1225,7 +1226,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                             {row.grade}
                           </span>
                           <div class="text-[10px] text-slate-400 font-mono">
-                            {row.trades} trades • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R
+                            {row.trades} {row.trades === 1 ? 'trade' : 'trades'} • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R
                           </div>
                         </div>
                         <div class="text-right font-mono">
@@ -1284,7 +1285,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                                         )}
                                       </Show>
                                     </div>
-                                    <div class="text-[10px] text-slate-400 font-mono">{row.trades} trades • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R</div>
+                                    <div class="text-[10px] text-slate-400 font-mono">{row.trades} {row.trades === 1 ? 'trade' : 'trades'} • WR {wr.toFixed(0)}% • Exp {expR >= 0 ? '+' : ''}{expR.toFixed(2)}R</div>
                                   </div>
                                   <div class="text-right font-mono shrink-0 ml-2">
                                     <div class={`font-bold ${row.totalR >= 0 ? 'text-purple-300' : 'text-rose-400'}`}>{row.totalR >= 0 ? '+' : ''}{row.totalR.toFixed(2)}R</div>

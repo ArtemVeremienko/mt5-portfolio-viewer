@@ -272,11 +272,15 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
                           </text>
 
                           {/* Month Label */}
-                          <g transform={`translate(${xCenter}, 212) rotate(-35)`}>
+                          <g transform={
+                            (props.monthlyAnalytics || []).length <= 6
+                              ? `translate(${xCenter}, 216)`
+                              : `translate(${xCenter}, 212) rotate(-35)`
+                          }>
                             <text
                               x="0"
                               y="0"
-                              text-anchor="end"
+                              text-anchor={(props.monthlyAnalytics || []).length <= 6 ? 'middle' : 'end'}
                               fill={isSelected() ? '#60a5fa' : '#94a3b8'}
                               font-size="10"
                               font-family="monospace"

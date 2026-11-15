@@ -618,8 +618,16 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
       }
     };
     window.addEventListener('resize', handleResize);
+    let resizeObserver: ResizeObserver | undefined;
+    if (chartContainer && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        handleResize();
+      });
+      resizeObserver.observe(chartContainer);
+    }
     onCleanup(() => {
       window.removeEventListener('resize', handleResize);
+      resizeObserver?.disconnect();
       if (chart) chart.remove();
     });
   });

@@ -49,7 +49,7 @@ export const Header: Component<HeaderProps> = (props) => {
             <select
               id="account-select"
               name="account"
-              class="w-full max-w-[170px] sm:max-w-[260px] truncate bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg px-2.5 sm:px-3 py-1.5 border border-slate-700 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer"
+              class="w-full max-w-[190px] sm:max-w-[320px] truncate bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg px-2.5 sm:px-3 py-1.5 border border-slate-700 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer"
               value={props.activeLogin || ''}
               onChange={(e) => props.onSelectAccount(Number(e.currentTarget.value))}
             >

@@ -1,10 +1,13 @@
 import { Component, createSignal, For, Show } from 'solid-js';
-import { CalendarDay, CalendarDeal, MetricMode } from '../types';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, ArrowUpRight, ArrowDownRight, Layers } from 'lucide-solid';
+import { Portal } from 'solid-js/web';
+import { CalendarDay, MetricMode, TradeDeal } from '../types';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, ArrowUpRight, ArrowDownRight } from 'lucide-solid';
 
 interface CalendarViewProps {
   days: CalendarDay[];
+  closedTrades?: TradeDeal[];
   mode: MetricMode;
+  onFilterByDate?: (dateStr: string) => void;
 }
 
 export const CalendarView: Component<CalendarViewProps> = (props) => {
@@ -270,6 +273,7 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
 
       {/* Trade Drill-down Modal / Drawer on Day Click */}
       <Show when={selectedDay()}>
+        <Portal>
         <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
           <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
@@ -349,7 +353,19 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
             </div>
 
             {/* Modal Footer */}
-            <div class="p-3 border-t border-slate-800 bg-slate-950/60 flex justify-end">
+            <div class="p-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end gap-2">
+              <Show when={props.onFilterByDate && selectedDay()?.date}>
+                <button
+                  onClick={() => {
+                    const d = selectedDay()?.date;
+                    setSelectedDay(null);
+                    if (d) props.onFilterByDate?.(d);
+                  }}
+                  class="px-4 py-1.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                >
+                  Filter in Trades History
+                </button>
+              </Show>
               <button
                 onClick={() => setSelectedDay(null)}
                 class="px-4 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white transition-colors"
@@ -359,6 +375,7 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
             </div>
           </div>
         </div>
+        </Portal>
       </Show>
     </div>
   );
