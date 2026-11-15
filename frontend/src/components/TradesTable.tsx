@@ -151,7 +151,8 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
   const [outcomeFilter, setOutcomeFilter] = createSignal<'all' | 'winners' | 'losers' | 'unreviewed'>('all');
   const [gradeFilter, setGradeFilter] = createSignal<'all' | 'A' | 'B' | 'C'>('all');
   const [tagFilter, setTagFilter] = createSignal<string>('');
-  const [sortBy, setSortBy] = createSignal<'time' | 'duration' | 'volume' | 'profit' | 'r_multiple'>('time');
+  type SortCol = 'time' | 'open_time' | 'duration' | 'volume' | 'profit' | 'r_multiple';
+  const [sortBy, setSortBy] = createSignal<SortCol>('time');
   const [sortDir, setSortDir] = createSignal<'asc' | 'desc'>('desc');
   const [page, setPage] = createSignal(1);
   const [editingTrade, setEditingTrade] = createSignal<TradeDeal | null>(null);
@@ -425,7 +426,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
   const getNetProfit = (t: TradeDeal) =>
     t.net_profit !== undefined ? t.net_profit : (t.profit + (t.swap || 0) + (t.commission || 0));
 
-  const toggleSort = (col: 'time' | 'duration' | 'volume' | 'profit' | 'r_multiple') => {
+  const toggleSort = (col: SortCol) => {
     if (sortBy() === col) {
       setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
     } else {
@@ -475,7 +476,11 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
       let va = 0;
       let vb = 0;
       if (col === 'time') { va = a.time; vb = b.time; }
-      else if (col === 'duration') {
+      else if (col === 'open_time') {
+        va = a.open_time || a.time || 0;
+        vb = b.open_time || b.time || 0;
+        if (va === vb) return ((a.time || 0) - (b.time || 0)) * dir;
+      } else if (col === 'duration') {
         va = (a.time || 0) - (a.open_time || a.time || 0);
         vb = (b.time || 0) - (b.open_time || b.time || 0);
       } else if (col === 'volume') { va = a.volume; vb = b.volume; }
@@ -857,7 +862,13 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                       </button>
                     </th>
                   </Show>
-                  <Show when={isColVisible('open_time')}><th class="py-2.5 px-2">Open Time</th></Show>
+                  <Show when={isColVisible('open_time')}>
+                    <th class="py-2.5 px-2">
+                      <button onClick={() => toggleSort('open_time')} class="inline-flex items-center gap-1 hover:text-white">
+                        <span>Open Time</span><ArrowUpDown size={11} class={sortBy() === 'open_time' ? 'text-blue-400' : 'opacity-50'} />
+                      </button>
+                    </th>
+                  </Show>
                   <Show when={isColVisible('close_time')}>
                     <th class="py-2.5 px-2">
                       <button onClick={() => toggleSort('time')} class="inline-flex items-center gap-1 hover:text-white">
@@ -1425,8 +1436,8 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                   <X size={16} />
                 </button>
               </div>
-              <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-                <div class="lg:col-span-7">
+              <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+                <div class="lg:col-span-7 flex flex-col">
                   <TradeChartGrid trade={t()} />
                 </div>
                 <div class="lg:col-span-5 space-y-3 text-xs">

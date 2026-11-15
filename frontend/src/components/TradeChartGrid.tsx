@@ -362,8 +362,8 @@ export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
   const netProfit = () => getNetProfit(props.trade);
 
   return (
-    <div class="space-y-2.5">
-      <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+    <div class="h-full flex flex-col gap-2.5">
+      <div class="shrink-0 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
         <div class="flex items-center gap-2">
           <CandlestickChart size={14} class="text-blue-400" />
           <span class="font-semibold text-slate-200">Multi-Timeframe Context</span>
@@ -416,14 +416,14 @@ export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
       </div>
 
       <Show when={loading()}>
-        <div class="h-[460px] bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-center gap-2 text-xs text-slate-400">
+        <div class="flex-1 min-h-[460px] bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-center gap-2 text-xs text-slate-400">
           <Loader2 size={16} class="animate-spin text-blue-400" />
           <span>Loading H1 / M5 / M1 candles...</span>
         </div>
       </Show>
 
       <Show when={!loading() && error()}>
-        <div class="h-[240px] bg-slate-950/70 border border-rose-500/30 rounded-xl flex items-center justify-center text-xs text-rose-400 px-4 text-center">
+        <div class="flex-1 min-h-[240px] bg-slate-950/70 border border-rose-500/30 rounded-xl flex items-center justify-center text-xs text-rose-400 px-4 text-center">
           Failed to load trade candles: {error()}
         </div>
       </Show>
@@ -433,7 +433,7 @@ export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
           <Show
             when={hasAnyBars()}
             fallback={
-              <div class="h-[460px] bg-slate-950/70 border border-slate-800 rounded-xl flex flex-col items-center justify-center gap-2 text-xs text-slate-400 px-6 text-center">
+              <div class="flex-1 min-h-[460px] bg-slate-950/70 border border-slate-800 rounded-xl flex flex-col items-center justify-center gap-2 text-xs text-slate-400 px-6 text-center">
                 <WifiOff size={20} class="text-slate-500" />
                 <p class="font-medium text-slate-300">No chart candles available for #{props.trade.ticket}</p>
                 <p class="text-[11px] text-slate-500 max-w-sm">
@@ -444,10 +444,19 @@ export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
               </div>
             }
           >
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              <CandlePane title="H1" tfSeconds={3600} bars={d().h1} trade={props.trade} heightClass="h-[210px]" />
-              <CandlePane title="M5" tfSeconds={300} bars={d().m5} trade={props.trade} heightClass="h-[210px]" />
-              <CandlePane title="M1" tfSeconds={60} bars={d().m1} trade={props.trade} heightClass="h-[235px]" spanClass="md:col-span-2" />
+            <div class="flex-1 min-h-0 flex flex-col gap-2.5">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 shrink-0">
+                <CandlePane title="H1" tfSeconds={3600} bars={d().h1} trade={props.trade} heightClass="h-[210px]" />
+                <CandlePane title="M5" tfSeconds={300} bars={d().m5} trade={props.trade} heightClass="h-[210px]" />
+              </div>
+              <CandlePane
+                title="M1"
+                tfSeconds={60}
+                bars={d().m1}
+                trade={props.trade}
+                heightClass="flex-1 min-h-[280px]"
+                spanClass="flex-1 min-h-0"
+              />
             </div>
           </Show>
         )}
