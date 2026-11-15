@@ -27,9 +27,7 @@ import {
   Calendar as CalendarIcon,
   BarChart3,
   CalendarDays,
-  Filter,
-  PanelLeftClose,
-  PanelLeftOpen
+  Filter
 } from 'lucide-solid';
 
 export const App: Component = () => {
@@ -45,12 +43,6 @@ export const App: Component = () => {
   const [mainTab, setMainTab] = createSignal<'overview' | 'vantharp' | 'excursions' | 'calendar' | 'advanced' | 'trades'>('overview');
   const [calendarSubTab, setCalendarSubTab] = createSignal<'daily' | 'monthly'>('daily');
   const [showFilters, setShowFilters] = createSignal<boolean>(false);
-  const [sidebarVisible, setSidebarVisible] = createSignal<boolean>(true);
-
-  const selectMainTab = (tab: 'overview' | 'vantharp' | 'excursions' | 'calendar' | 'advanced' | 'trades') => {
-    setMainTab(tab);
-    setSidebarVisible(tab === 'overview');
-  };
 
   // Custom Analysis Global Filters
   const [filterStartDate, setFilterStartDate] = createSignal<string>('');
@@ -270,6 +262,7 @@ export const App: Component = () => {
         accounts={accounts()}
         activeAccount={activeAccount()}
         activeLogin={activeLogin()}
+        stats={portfolioData()?.stats || null}
         isMt5Connected={isMt5Connected()}
         isWsConnected={isWsConnected()}
         mode={metricMode()}
@@ -282,21 +275,7 @@ export const App: Component = () => {
       />
 
       {/* Main Container */}
-      <main class="max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-6 flex-1 flex flex-col lg:flex-row gap-6">
-        
-        {/* Left Column: Fixed Sidebar Stats */}
-        <Show when={sidebarVisible()}>
-          <div class="flex-shrink-0">
-            <SidebarStats
-              stats={portfolioData()?.stats || null}
-              account={activeAccount()}
-              mode={metricMode()}
-            />
-          </div>
-        </Show>
-
-        {/* Right Column: Dashboard Navigation & Content */}
-        <div class="flex-1 flex flex-col gap-5 min-w-0">
+      <main class="max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-6 flex-1 flex flex-col gap-5 min-w-0">
           
           {/* Main Navigation Tabs */}
           <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl shadow-lg backdrop-blur-sm overflow-x-auto">
@@ -306,7 +285,7 @@ export const App: Component = () => {
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
               }`}
-              onClick={() => selectMainTab('overview')}
+              onClick={() => setMainTab('overview')}
             >
               <LineChart size={15} />
               <span>Performance</span>
@@ -318,7 +297,7 @@ export const App: Component = () => {
                   ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/30'
                   : 'text-purple-400 hover:text-purple-200 hover:bg-purple-950/30'
               }`}
-              onClick={() => selectMainTab('vantharp')}
+              onClick={() => setMainTab('vantharp')}
             >
               <Award size={15} />
               <span>Van Tharp SQN</span>
@@ -330,7 +309,7 @@ export const App: Component = () => {
                   ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-600/30'
                   : 'text-cyan-400 hover:text-cyan-200 hover:bg-cyan-950/30'
               }`}
-              onClick={() => selectMainTab('excursions')}
+              onClick={() => setMainTab('excursions')}
             >
               <Activity size={15} />
               <span>MAE / MFE</span>
@@ -342,7 +321,7 @@ export const App: Component = () => {
                   ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30'
                   : 'text-emerald-400 hover:text-emerald-200 hover:bg-emerald-950/30'
               }`}
-              onClick={() => selectMainTab('calendar')}
+              onClick={() => setMainTab('calendar')}
             >
               <CalendarDays size={15} />
               <span>Calendar & Periods</span>
@@ -354,7 +333,7 @@ export const App: Component = () => {
                   ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-blue-400 hover:text-blue-200 hover:bg-blue-950/30'
               }`}
-              onClick={() => selectMainTab('advanced')}
+              onClick={() => setMainTab('advanced')}
             >
               <BarChart3 size={15} />
               <span>Advanced Stats</span>
@@ -366,29 +345,13 @@ export const App: Component = () => {
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
               }`}
-              onClick={() => selectMainTab('trades')}
+              onClick={() => setMainTab('trades')}
             >
               <Layers size={15} />
               <span>Trades ({portfolioData()?.stats.total_trades || 0})</span>
             </button>
 
             <div class="ml-auto flex items-center gap-1 pl-2 border-l border-slate-800 shrink-0">
-              <button
-                type="button"
-                onClick={() => setSidebarVisible(!sidebarVisible())}
-                title={sidebarVisible() ? 'Hide Portfolio Sidebar' : 'Show Portfolio Sidebar'}
-                aria-label={sidebarVisible() ? 'Hide Portfolio Sidebar' : 'Show Portfolio Sidebar'}
-                class={`p-2 rounded-xl text-xs transition-all ${
-                  sidebarVisible()
-                    ? 'bg-slate-800 text-slate-200 border border-slate-700'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
-                }`}
-              >
-                <Show when={sidebarVisible()} fallback={<PanelLeftOpen size={15} />}>
-                  <PanelLeftClose size={15} />
-                </Show>
-              </button>
-
               <button
                 type="button"
                 onClick={() => setShowFilters(!showFilters())}
@@ -648,10 +611,21 @@ export const App: Component = () => {
                 </div>
               );
             })()}
-            <PerformanceChart
-              curves={portfolioData()?.curves || []}
-              mode={metricMode()}
-            />
+            <div class="flex flex-col lg:flex-row gap-5 items-start">
+              <div class="flex-shrink-0 w-full lg:w-auto">
+                <SidebarStats
+                  stats={portfolioData()?.stats || null}
+                  account={activeAccount()}
+                  mode={metricMode()}
+                />
+              </div>
+              <div class="flex-1 min-w-0 w-full">
+                <PerformanceChart
+                  curves={portfolioData()?.curves || []}
+                  mode={metricMode()}
+                />
+              </div>
+            </div>
             <MonthlyHeatmap
               matrix={portfolioData()?.monthly_matrix || []}
               mode={metricMode()}
@@ -721,7 +695,7 @@ export const App: Component = () => {
                     setFilterStartDate(dateStr);
                     setFilterEndDate(dateStr);
                     fetchPortfolio();
-                    selectMainTab('trades');
+                    setMainTab('trades');
                   }}
                 />
               </Show>
@@ -765,8 +739,6 @@ export const App: Component = () => {
               onNoteSaved={() => fetchPortfolio()}
             />
           </Show>
-
-        </div>
 
       </main>
     </div>

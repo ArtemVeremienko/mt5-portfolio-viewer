@@ -1,21 +1,17 @@
 import { Component, For, Show } from 'solid-js';
-import { MetricMode, TradeScope, AccountInfo } from '../types';
+import { MetricMode, AccountInfo, PortfolioStats } from '../types';
 import { 
   RefreshCw, 
-  Activity, 
-  CheckCircle2, 
-  AlertCircle, 
-  Layers, 
   DollarSign, 
   Percent, 
-  TrendingUp,
-  History
+  TrendingUp
 } from 'lucide-solid';
 
 interface HeaderProps {
   accounts: AccountInfo[];
   activeAccount: AccountInfo | null;
   activeLogin: number | null;
+  stats: PortfolioStats | null;
   isMt5Connected: boolean;
   isWsConnected: boolean;
   mode: MetricMode;
@@ -28,20 +24,61 @@ interface HeaderProps {
 export const Header: Component<HeaderProps> = (props) => {
   return (
     <header class="bg-slate-900 border-b border-slate-800 px-4 sm:px-6 py-3 sticky top-0 z-50">
-      <div class="max-w-[1600px] mx-auto flex flex-col lg:flex-row lg:flex-wrap items-center justify-between gap-3 lg:gap-4">
+      <div class="max-w-[1440px] mx-auto flex flex-col lg:flex-row lg:flex-wrap items-center justify-between gap-3 lg:gap-4">
         
-        {/* Brand & Account Selector */}
-        <div class="flex items-center gap-3 sm:gap-4 w-full lg:w-auto justify-between lg:justify-start min-w-0">
+        {/* Brand KPIs & Account Selector */}
+        <div class="flex flex-wrap items-center gap-2.5 sm:gap-3 w-full lg:w-auto justify-between lg:justify-start min-w-0">
           <div class="flex items-center gap-2.5 shrink-0">
             <div class="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-bold text-lg shrink-0">
               fx
             </div>
-            <div>
-              <div class="flex items-center gap-2">
-                <h1 class="text-sm sm:text-base font-bold text-white tracking-tight whitespace-nowrap">MT5 Portfolio Viewer</h1>
-              </div>
-              <p class="text-[11px] sm:text-xs text-slate-400 whitespace-nowrap">MetaTrader 5 Automated Analytics</p>
-            </div>
+            <Show
+              when={props.stats}
+              fallback={
+                <div class="text-xs font-bold text-slate-300">Loading portfolio...</div>
+              }
+            >
+              {(st) => {
+                const gain = () => st().gain_pct ?? 0;
+                const profit = () => st().total_profit ?? 0;
+                const totalR = () => st().total_r ?? 0;
+                const dd = () => st().max_drawdown_pct ?? 0;
+                return (
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <div class="px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-800 leading-tight">
+                      <div class="text-[9px] uppercase tracking-wider text-slate-400">Balance</div>
+                      <div class="text-[11px] font-bold font-mono text-white">
+                        ${(st().balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div class="px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-800 leading-tight">
+                      <div class="text-[9px] uppercase tracking-wider text-slate-400">Gain</div>
+                      <div class={`text-[11px] font-bold font-mono ${gain() >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {gain() >= 0 ? '+' : ''}{gain().toFixed(2)}%
+                      </div>
+                    </div>
+                    <div class="px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-800 leading-tight">
+                      <div class="text-[9px] uppercase tracking-wider text-slate-400">
+                        {props.mode === 'r' ? 'Return (R)' : 'Profit'}
+                      </div>
+                      <div class={`text-[11px] font-bold font-mono ${
+                        (props.mode === 'r' ? totalR() : profit()) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                      }`}>
+                        {props.mode === 'r'
+                          ? `${totalR() >= 0 ? '+' : ''}${totalR().toFixed(2)}R`
+                          : `${profit() >= 0 ? '+$' : '-$'}${Math.abs(profit()).toFixed(2)}`}
+                      </div>
+                    </div>
+                    <div class="px-2 py-1 rounded-lg bg-slate-950/80 border border-slate-800 leading-tight">
+                      <div class="text-[9px] uppercase tracking-wider text-slate-400">Max DD</div>
+                      <div class="text-[11px] font-bold font-mono text-rose-400">
+                        {dd().toFixed(2)}%
+                      </div>
+                    </div>
+                  </div>
+                );
+              }}
+            </Show>
           </div>
 
           {/* Account Dropdown Switcher */}
