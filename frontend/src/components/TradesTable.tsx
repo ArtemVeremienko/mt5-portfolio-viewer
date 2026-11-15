@@ -121,6 +121,26 @@ const DEFAULT_VISIBLE_COLUMNS: HistoryColumnKey[] = HISTORY_COLUMNS
   .filter((c) => c.defaultVisible)
   .map((c) => c.key);
 const VISIBLE_COLUMNS_STORAGE_KEY = 'tradesTable.visibleColumns';
+const SORT_STORAGE_KEY = 'tradesTable.sort';
+
+type SortCol = 'time' | 'open_time' | 'duration' | 'volume' | 'profit' | 'r_multiple';
+type SortDir = 'asc' | 'desc';
+interface SortConfig {
+  sortBy: SortCol;
+  sortDir: SortDir;
+}
+const VALID_SORT_COLS = new Set<SortCol>(['time', 'open_time', 'duration', 'volume', 'profit', 'r_multiple']);
+const DEFAULT_SORT: SortConfig = { sortBy: 'time', sortDir: 'desc' };
+
+function isValidSortConfig(val: unknown): val is SortConfig {
+  if (!val || typeof val !== 'object') return false;
+  const obj = val as Record<string, unknown>;
+  return (
+    typeof obj.sortBy === 'string' &&
+    VALID_SORT_COLS.has(obj.sortBy as SortCol) &&
+    (obj.sortDir === 'asc' || obj.sortDir === 'desc')
+  );
+}
 
 function isValidColumnList(val: unknown): val is HistoryColumnKey[] {
   return (
@@ -151,9 +171,9 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
   const [outcomeFilter, setOutcomeFilter] = createSignal<'all' | 'winners' | 'losers' | 'unreviewed'>('all');
   const [gradeFilter, setGradeFilter] = createSignal<'all' | 'A' | 'B' | 'C'>('all');
   const [tagFilter, setTagFilter] = createSignal<string>('');
-  type SortCol = 'time' | 'open_time' | 'duration' | 'volume' | 'profit' | 'r_multiple';
-  const [sortBy, setSortBy] = createSignal<SortCol>('time');
-  const [sortDir, setSortDir] = createSignal<'asc' | 'desc'>('desc');
+  const initialSort = getStorageItem(SORT_STORAGE_KEY, DEFAULT_SORT, isValidSortConfig);
+  const [sortBy, setSortBy] = createSignal<SortCol>(initialSort.sortBy);
+  const [sortDir, setSortDir] = createSignal<SortDir>(initialSort.sortDir);
   const [page, setPage] = createSignal(1);
   const [editingTrade, setEditingTrade] = createSignal<TradeDeal | null>(null);
   const [noteText, setNoteText] = createSignal('');
@@ -427,12 +447,10 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     t.net_profit !== undefined ? t.net_profit : (t.profit + (t.swap || 0) + (t.commission || 0));
 
   const toggleSort = (col: SortCol) => {
-    if (sortBy() === col) {
-      setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
-    } else {
-      setSortBy(col);
-      setSortDir('desc');
-    }
+    const nextDir: SortDir = sortBy() === col ? (sortDir() === 'desc' ? 'asc' : 'desc') : 'desc';
+    setSortBy(col);
+    setSortDir(nextDir);
+    setStorageItem<SortConfig>(SORT_STORAGE_KEY, { sortBy: col, sortDir: nextDir });
     setPage(1);
   };
 
