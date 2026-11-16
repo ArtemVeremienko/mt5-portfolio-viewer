@@ -1,13 +1,13 @@
-import { Component, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
-import { 
-  PortfolioStats, 
-  CurrencySummaryItem, 
-  HourlyStat, 
-  DayOfWeekStat, 
-  RiskOfRuinItem, 
-  DurationTrade, 
+import { type Component, createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
+import type {
+  PortfolioStats,
+  CurrencySummaryItem,
+  HourlyStat,
+  DayOfWeekStat,
+  RiskOfRuinItem,
+  DurationTrade,
   RDistributionBucket,
-  MetricMode 
+  MetricMode,
 } from '../types';
 import { 
   Award,
@@ -72,7 +72,10 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
   // Tooltip state for Duration scatter plot (bulletproof viewport fixed coordinates)
   const [hoveredDurationTrade, setHoveredDurationTrade] = createSignal<DurationTrade | null>(null);
   const [durationMousePos, setDurationMousePos] = createSignal<{ x: number; y: number; placeBelow: boolean }>({ x: 0, y: 0, placeBelow: false });
-  let durationLeaveTimer: any = null;
+  let durationLeaveTimer: ReturnType<typeof setTimeout> | null = null;
+  onCleanup(() => {
+    if (durationLeaveTimer) clearTimeout(durationLeaveTimer);
+  });
 
   const handleDurationPointEnter = (e: MouseEvent, t: DurationTrade) => {
     if (durationLeaveTimer) {
@@ -116,7 +119,7 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
   };
 
   // Dynamic Hourly Range: 1 hour buffer before first column and after last column
-  const activeHourlyStats = () => {
+  const activeHourlyStats = createMemo(() => {
     const list = props.hourly || [];
     const withTrades = list.filter(h => h.trades > 0);
     if (!withTrades.length) return list;
@@ -125,16 +128,16 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
     const startH = Math.max(0, minH - 1); // 1 hour buffer before
     const endH = Math.min(23, maxH + 1);   // 1 hour buffer after
     return list.filter(h => h.hour >= startH && h.hour <= endH);
-  };
+  });
 
   // Dynamic Daily Range: remove empty days
-  const activeDailyStats = () => {
+  const activeDailyStats = createMemo(() => {
     const list = props.days || [];
     const withTrades = list.filter(d => d.trades > 0);
     return withTrades.length > 0 ? withTrades : list;
-  };
+  });
 
-  const menuItems: Array<{ id: AdvSectionId; label: string; icon: any }> = [
+  const menuItems: Array<{ id: AdvSectionId; label: string; icon: Component<{ size?: number }> }> = [
     { id: 'sqn', label: 'Van Tharp SQN', icon: Award },
     { id: 'trades', label: 'Trades', icon: BarChart3 },
     { id: 'summary', label: 'Summary', icon: Layers },
@@ -642,8 +645,8 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
 
                   {/* Bars for active hours */}
                   <For each={hStats}>
-                    {(h, i) => {
-                      const xCenter = leftPad + (i() * step) + (step / 2);
+                    {(h, idx) => {
+                      const xCenter = leftPad + (idx() * step) + (step / 2); // eslint-disable-line solid/reactivity
                       const x = xCenter - (barWidth / 2);
 
                       if (hourlyViewMode() === 'counts') {
@@ -831,8 +834,8 @@ export const AdvancedStats: Component<AdvancedStatsProps> = (props) => {
 
                   {/* Active Day Bars */}
                   <For each={dStats}>
-                    {(day, i) => {
-                      const xCenter = leftPad + (i() * step) + (step / 2);
+                    {(day, idx) => {
+                      const xCenter = leftPad + (idx() * step) + (step / 2); // eslint-disable-line solid/reactivity
                       const x = xCenter - (barWidth / 2);
                       const totalH = (day.trades / maxTrades) * 180;
                       const winH = day.trades > 0 ? (day.won / day.trades) * totalH : 0;

@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
+
+from backend.database import get_db_connection, get_trade_candles, upsert_trade_candles
 from backend.main import app
-from backend.database import get_db_connection, upsert_trade_candles, get_trade_candles
+
 
 def test_full_system_integration():
     client = TestClient(app)

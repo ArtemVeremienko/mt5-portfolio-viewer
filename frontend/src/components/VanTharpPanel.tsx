@@ -1,6 +1,6 @@
-import { Component, For, Show } from 'solid-js';
-import { PortfolioStats, RDistributionBucket } from '../types';
-import { Award, Target, BarChart3, HelpCircle, CheckCircle, AlertTriangle } from 'lucide-solid';
+import { type Component, For, Show } from 'solid-js';
+import type { PortfolioStats, RDistributionBucket } from '../types';
+import { Award, BarChart3, AlertTriangle } from 'lucide-solid';
 
 interface VanTharpPanelProps {
   stats: PortfolioStats | null;

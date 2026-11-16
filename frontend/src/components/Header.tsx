@@ -1,5 +1,5 @@
-import { Component, For, Show } from 'solid-js';
-import { MetricMode, AccountInfo, PortfolioStats } from '../types';
+import { type Component, For, Show } from 'solid-js';
+import type { MetricMode, AccountInfo, PortfolioStats } from '../types';
 import { 
   RefreshCw, 
   DollarSign, 
@@ -136,7 +136,7 @@ export const Header: Component<HeaderProps> = (props) => {
               title="View metrics in Profit ($)"
             >
               <DollarSign size={14} />
-              <span>$ Profit</span>
+              <span>Profit</span>
             </button>
             
             <button
@@ -149,7 +149,7 @@ export const Header: Component<HeaderProps> = (props) => {
               title="View metrics in Percent Gain (%)"
             >
               <Percent size={14} />
-              <span>% Gain</span>
+              <span>Gain</span>
             </button>
 
             <button
@@ -189,7 +189,7 @@ export const Header: Component<HeaderProps> = (props) => {
 
           {/* Sync Button */}
           <button
-            onClick={props.onSync}
+            onClick={() => props.onSync()}
             disabled={props.isSyncing}
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 hover:border-slate-600 transition-all active:scale-95 disabled:opacity-50"
             title="Sync latest deals and positions from MT5"

@@ -67,3 +67,14 @@ During interactive pair programming and verification cycles, several critical do
    - Fixed a Solid.js `createEffect` subscription lock that was reverting user tab clicks back to `'balance'`.
 4. **Split Canvas Scaling**:
    - Resolved flat horizontal balance curves and 2-pixel sliver bars by dedicating the upper 68% (`priceScaleId: 'right'`) to Balance/Equity with dynamic auto-zoom ($22.80 - $25.00), and the lower 28% (`priceScaleId: 'left'`) to prominent Trade Profit change bars.
+
+### Milestone 5: Clean Architecture, Tag Normalization & Design System Refactoring
+1. **Backend Clean / Hexagonal-Lite Architecture**:
+   - Eliminated module-level mutable globals (`CURRENT_ACTIVE_LOGIN`, `connected_clients`) in favor of `app.state` + `Depends()`, modular `APIRouter`s (`accounts`, `portfolio`, `trades`, `tags`, `ws`), and `pydantic-settings`.
+   - Isolated MT5 SDK quirks behind a `TradingGateway` protocol (`LiveMT5Gateway` + deterministic `SimulatedMT5Gateway` with local PRNG), and deduplicated 1R risk & pip-size logic into `backend/domain/`.
+   - Replaced per-call SQLite connections with `SqliteUnitOfWork` (`WAL`, `foreign_keys=ON`, `busy_timeout=5000`), versioned `PRAGMA user_version` migrations, and normalized `trade_note_tags` join table (`ON DELETE CASCADE`).
+   - Decomposed the 1,325-line `process_portfolio_analytics` into `backend/services/analytics/` (`filters`, `curves`, `tharp`, `statistics`, `breakdowns`, `excursions`, `pipeline`) with `hypothesis` property-based tests and `ruff` + `mypy --strict` gates.
+2. **Frontend Feature-Sliced Architecture & 3-Layer Design Tokens**:
+   - Introduced 3-layer CSS tokens (`frontend/src/styles/tokens.css`: Primitive `@theme` -> Semantic `:root` -> Component `:root`) plus `chartTheme.ts`.
+   - Extracted typed `api/` clients, headless `primitives/` (`useWebSocket`, `useHoverTooltip`, `useClickOutside`), `components/ui/` (`Card`, `Badge`), `utils/formatters.ts` + `chartTransforms.ts`, and `features/layout/` (`GlobalFilterBar`, `OverviewStrip`).
+   - Switched `App.tsx` live WebSocket updates to `createStore` + `reconcile`, enabled `strict: true` + `verbatimModuleSyntax: true` in `tsconfig.app.json`, and enforced `eslint-plugin-solid` + Vitest unit tests.

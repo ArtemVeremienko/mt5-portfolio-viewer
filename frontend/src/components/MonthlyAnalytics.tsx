@@ -1,6 +1,6 @@
-import { Component, createSignal, For, Show } from 'solid-js';
-import { MonthlyAnalyticsItem, MonthlyCurrency, MetricMode } from '../types';
-import { Calendar, PieChart as PieIcon, BarChart2, Clock, Check } from 'lucide-solid';
+import { type Component, createSignal, For, Show } from 'solid-js';
+import type { MonthlyAnalyticsItem, MetricMode } from '../types';
+import { Calendar } from 'lucide-solid';
 
 interface MonthlyAnalyticsProps {
   monthlyAnalytics: MonthlyAnalyticsItem[];
@@ -202,11 +202,11 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
 
                   {/* Monthly Bars */}
                   <For each={months}>
-                    {(m, i) => {
+                    {(m, idx) => {
                       const count = months.length;
                       const step = 420 / count;
                       const barWidth = Math.min(65, Math.max(28, step * 0.55));
-                      const xCenter = 55 + (i() * step) + (step / 2);
+                      const xCenter = 55 + (idx() * step) + (step / 2); // eslint-disable-line solid/reactivity
                       const x = xCenter - (barWidth / 2);
 
                       const val = (() => {
@@ -225,7 +225,7 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
                       const y = isNeg ? zeroY : zeroY - barH;
                       const isSelected = () => selectedMonth()?.month === m.month && selectedMonth()?.year === m.year;
                       
-                      const barColor = isNeg ? '#f43f5e' : (i() % 2 === 0 ? '#10b981' : '#34d399');
+                      const barColor = isNeg ? '#f43f5e' : (idx() % 2 === 0 ? '#10b981' : '#34d399'); // eslint-disable-line solid/reactivity
 
                       return (
                         <g
@@ -342,9 +342,9 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
 
                     {/* Horizontal Bars by Currency */}
                     <For each={currs}>
-                      {(c, i) => {
+                      {(c, idx) => {
                         const barHeight = 30;
-                        const y = 25 + (i() * 46);
+                        const y = 25 + (idx() * 46); // eslint-disable-line solid/reactivity
                         const barW = Math.min(360, (c.reward_risk_ratio / maxRatio) * 360);
 
                         return (
@@ -426,13 +426,13 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
                 <div class="relative py-2">
                   <svg viewBox="0 0 500 240" class="w-full h-60 overflow-visible">
                     <For each={currs}>
-                      {(c, i) => {
+                      {(c, idx) => {
                         const sliceAngle = (c.popularity_pct / 100) * 2 * Math.PI;
                         const startA = cumulativeAngle;
                         const endA = cumulativeAngle + sliceAngle;
                         cumulativeAngle = endA;
 
-                        const color = sliceColors[i() % sliceColors.length];
+                        const color = sliceColors[idx() % sliceColors.length]; // eslint-disable-line solid/reactivity
 
                         // If single slice is 100%
                         if (c.popularity_pct >= 99.9) {
@@ -543,9 +543,9 @@ export const MonthlyAnalytics: Component<MonthlyAnalyticsProps> = (props) => {
 
                     {/* Stacked Horizontal Bars by Currency */}
                     <For each={currs}>
-                      {(c, i) => {
+                      {(c, idx) => {
                         const barHeight = 28;
-                        const y = 25 + (i() * 46);
+                        const y = 25 + (idx() * 46); // eslint-disable-line solid/reactivity
 
                         const longMinutes = c.avg_long_duration_sec / 60;
                         const shortMinutes = c.avg_short_duration_sec / 60;

@@ -1,6 +1,6 @@
-import { Component, Show } from 'solid-js';
-import { PortfolioStats, AccountInfo, MetricMode } from '../types';
-import { ShieldCheck, Award, TrendingUp, Info } from 'lucide-solid';
+import { type Component, Show } from 'solid-js';
+import type { PortfolioStats, AccountInfo, MetricMode } from '../types';
+import { TrendingUp, Info } from 'lucide-solid';
 
 interface SidebarStatsProps {
   stats: PortfolioStats | null;

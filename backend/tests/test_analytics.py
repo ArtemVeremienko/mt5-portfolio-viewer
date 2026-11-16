@@ -1,12 +1,14 @@
 import pytest
+
 from backend.analytics import (
-    compute_1r_risk,
-    process_portfolio_analytics,
-    get_sqn_rating,
     calculate_trade_pips,
-    format_duration
+    compute_1r_risk,
+    format_duration,
+    get_sqn_rating,
+    process_portfolio_analytics,
 )
-from backend.database import init_db, upsert_account, upsert_deals, get_deals_by_account
+from backend.database import get_deals_by_account, init_db, upsert_account, upsert_deals
+
 
 def test_compute_1r_risk_with_sl():
     # Buy trade with SL

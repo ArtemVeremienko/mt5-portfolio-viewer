@@ -1,6 +1,6 @@
-import { Component, createSignal, For, Show } from 'solid-js';
+import { type Component, createMemo, createSignal, For, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { CalendarDay, MetricMode, TradeDeal } from '../types';
+import type { CalendarDay, MetricMode, TradeDeal } from '../types';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, ArrowUpRight, ArrowDownRight } from 'lucide-solid';
 
 interface CalendarViewProps {
@@ -47,16 +47,16 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
   };
 
   // Map calendar_days array by date "YYYY-MM-DD"
-  const dayMap = () => {
+  const dayMap = createMemo(() => {
     const map = new Map<string, CalendarDay>();
     for (const d of (props.days || [])) {
       map.set(d.date, d);
     }
     return map;
-  };
+  });
 
   // Build 7xN calendar matrix for current viewed month
-  const calendarCells = () => {
+  const calendarCells = createMemo(() => {
     const yr = currentYear();
     const mo = currentMonth();
     const map = dayMap();
@@ -124,7 +124,7 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
     }
 
     return cells;
-  };
+  });
 
   const formatProfit = (pnl: number, r: number) => {
     if (props.mode === 'r') {

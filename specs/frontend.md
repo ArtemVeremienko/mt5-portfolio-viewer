@@ -1,72 +1,79 @@
 # Frontend Architecture Specification
 
 ## 1. Overview
-The frontend is a single-page application built with **Solid.js** (Zero Virtual DOM) and **Tailwind CSS**. It provides instantaneous updates with fine-grained reactivity, consuming the FastAPI backend via REST and WebSockets.
+The frontend is a single-page application built with **Solid.js** (Zero Virtual DOM), **TypeScript (strict mode)**, and **Tailwind CSS v4**. It consumes the FastAPI backend via typed REST API clients and a reconnecting WebSocket hook.
 
 ---
 
 ## 2. Directory Structure
 
-```
+```text
 frontend/src/
-├── App.tsx                     # Top-level state coordinator, WebSocket subscriber, and layout
-├── types.ts                   # TypeScript interfaces (PortfolioStats, CurvePoint, ExcursionTrade, etc.)
-├── index.css                  # Tailwind utility imports and custom scrollbar styles
-├── index.tsx                  # Solid.js mount entry point
+├── App.tsx                        # Slim shell: navigation tabs, store/WS wiring, tab views
+├── types.ts                       # Shared domain TypeScript interfaces
+├── index.css                      # Tailwind v4 + 3-layer token import + scrollbar styles
+├── index.tsx                      # Solid.js mount entry point
+├── styles/
+│   └── tokens.css                 # 3-layer design tokens (Primitive -> Semantic -> Component)
+├── api/
+│   ├── client.ts                  # Typed fetchJson<T> + ApiError normalization
+│   ├── portfolio.ts               # getAccounts, getPortfolio, getOpenTrades, switchAccount, syncAccount
+│   ├── trades.ts                  # getTradeCandles (AbortSignal), saveTradeNote
+│   └── tags.ts                    # getTags, createTag, updateTag, deleteTag
+├── primitives/
+│   ├── useWebSocket.ts            # Reconnecting WS hook with onCleanup
+│   ├── useHoverTooltip.ts         # Shared viewport-clamped tooltip state + timer cleanup
+│   └── useClickOutside.ts         # Outside-click & Escape listener with onCleanup
+├── utils/
+│   ├── formatters.ts              # Centralized currency, pct, R, and duration formatters
+│   ├── chartTransforms.ts         # Pure timestamp deduplication & timeframe slicing
+│   ├── chartTheme.ts              # Reads CSS semantic tokens for Lightweight Charts v5
+│   └── storage.ts                 # Typed localStorage helpers
+├── components/ui/
+│   ├── Card.tsx                   # Reusable Card primitive (splitProps)
+│   └── Badge.tsx                  # Reusable Badge primitive (mergeProps + splitProps)
+├── features/layout/
+│   ├── GlobalFilterBar.tsx        # Date, symbol, direction, EA, magic, and all-accounts filters
+│   └── OverviewStrip.tsx          # Today/Week/Month/Floating strip + Prop Risk Guard popover
 └── components/
-    ├── Header.tsx             # Account picker, Metric Mode switch, Global Trade Scope, Sync button
-    ├── SidebarStats.tsx       # Authentic Myfxbook financial metrics and trading edge cards
-    ├── PerformanceChart.tsx   # Lightweight Charts v5 multi-curve canvas with split scaling & bottom legend
-    ├── MonthlyMatrix.tsx      # Monthly return heatmap matrix (Jan-Dec + YTD)
-    ├── VanTharpPanel.tsx      # Dr. Van Tharp SQN card, sample progress indicator, R-Distribution
-    ├── ExcursionPanel.tsx     # MAE/MFE scatter plots, Trade Quality Matrix, Excursions Table
-    └── TradingActivity.tsx    # Closed trades list and open positions monitor
+    ├── Header.tsx                 # Account picker, Metric Mode switch, Sync button
+    ├── SidebarStats.tsx           # Myfxbook financial metrics & trading edge cards
+    ├── PerformanceChart.tsx       # Lightweight Charts v5 multi-curve canvas with split scaling
+    ├── MonthlyHeatmap.tsx         # Monthly return heatmap matrix (Jan-Dec + YTD)
+    ├── MonthlyAnalytics.tsx       # 4-quadrant monthly breakdown
+    ├── TradingStats.tsx           # Summary, symbol, hourly, and daily overview cards
+    ├── VanTharpPanel.tsx          # Van Tharp SQN card, sample progress indicator, R-Distribution
+    ├── AdvancedStats.tsx          # Extended statistical edge, Risk of Ruin, Duration scatter
+    ├── ExcursionPanel.tsx         # MAE/MFE scatter plots & Trade Quality Matrix
+    ├── CalendarView.tsx           # Daily P&L calendar + drill-down modal
+    ├── TradesTable.tsx            # Open/History/Playbook/Cashflows tabs + Journal modal
+    └── TradeChartGrid.tsx         # Multi-timeframe (H1/M5/M1) trade execution chart grid
 ```
 
 ---
 
-## 3. Key Component Implementations
+## 3. Key Architectural Implementations
 
-### 3.1 Header (`components/Header.tsx`)
-- **Metric Mode Switcher**: Toggles between `Currency ($)`, `Growth (%)`, and `Van Tharp (R)`.
-- **Global Trade Scope Filter**: Toggles between `All Trades (N)` and `Last 100 (100)`. Modifies the query parameter `?scope=all|last100` passed to `/api/portfolio`.
-- **Manual Sync**: Dispatches POST to `/api/sync` and refreshes dashboard state.
+### 3.1 3-Layer Design System Tokens (`styles/tokens.css` & `utils/chartTheme.ts`)
+1. **Primitive Tokens (`@theme`)**: Raw palette (`--color-navy-950`, `--color-emerald-500`, `--color-rose-500`, etc.) and radii (`--radius-card`, `--radius-control`).
+2. **Semantic Tokens (`:root`)**: Intent-based surface, border, text, status (`--status-profit`, `--status-loss`, `--status-r`), and chart tokens (`--chart-bull`, `--chart-bear`, `--chart-grid`).
+3. **Component Tokens (`:root`)**: `--card-bg`, `--card-border`, `--table-row-hover`, `--tooltip-bg`.
+4. `chartTheme.ts` reads semantic CSS variables at runtime so Lightweight Charts v5 canvases stay synchronized with Tailwind UI.
 
 ### 3.2 Performance Chart (`components/PerformanceChart.tsx`)
 Built on **TradingView Lightweight Charts v5**:
-- **Multi-Series Views**:
-  - `Growth (%)`: Growth Area (`#10b981`) + Equity Growth Line (`#f59e0b`) + Change Bars (%).
-  - `Balance & Equity`: Balance Line (`#3b82f6`) + Equity Line (`#f59e0b`) + Trade Profit Bars ($).
-  - `Profit ($)`: Cumulative Profit Area + Return Bars.
-  - `Van Tharp R-Curve`: Cumulative R Area (`#a855f7`) + Trade R Bars.
-  - `Drawdown (%)`: Inverted Red Area (`#ef4444`).
-- **Split Canvas Scaling**:
-  - Upper Region (Top 68%): Dedicated to `rightPriceScale` for curves with auto-zoom bounds ($22.80 to $25.00), preventing flat horizontal lines.
-  - Lower Region (Bottom 28%): Dedicated to `leftPriceScale` (`priceScaleId: 'left'`, borderless) for prominent trade change bars with independent zero baseline.
-- **Interactive Legend Toggles**: Bottom pills allow users to toggle each individual series on or off dynamically.
-- **Tab Switching Guard**: `createEffect` guards against state override using a `lastMode` tracker, ensuring tab clicks remain active until user explicitly toggles the global header switcher.
+- **Multi-Series Views**: Growth (%), Balance & Equity ($), Profit ($), Van Tharp R-Curve, and Drawdown (%).
+- **Split Canvas Scaling**: Upper region on `rightPriceScale` for curves; lower region on `leftPriceScale` (`priceScaleId: 'left'`) for trade change bars.
+- **Tab Switching Guard**: Uses Solid's `on(() => props.mode, ..., { defer: true })` so tab clicks remain active until the user explicitly toggles the global header mode switcher.
 
-### 3.3 Van Tharp Panel (`components/VanTharpPanel.tsx`)
-- **SQN Badge**: Dynamic color grading from red (*Poor*) to purple (*Superb*).
-- **Developing Sample Indicator**: Displays an amber warning banner and progress bar when closed trades $N < 30$, reminding the trader that Van Tharp statistical reliability begins at 30 trades and benchmarks at 100 trades.
-- **R-Distribution Histogram**: Categorizes trades into 7 asymmetric risk buckets ($<-2R$ to $>5R$).
-
-### 3.4 Excursion Panel (`components/ExcursionPanel.tsx`)
-- **Chart 1 (MAE vs Return)**: Evaluates stop-loss effectiveness with 90% SL cutoff reference line.
-- **Chart 2 (MFE vs Return)**: Evaluates profit capture efficiency with 50% capture benchmark line.
-- **Chart 3 (Trade Quality Matrix - MFE vs MAE)**:
-  - SVG quadrant map with dynamic median dividers.
-  - Independent X and Y auto-scaling (+15% padding) for optimal spread.
-  - 1:1 diagonal line ($y = x$) with non-colliding ratio badge.
-  - Hover tooltips with short date/time (`MM/DD HH:mm`) and ticket numbers.
-- **Summary Table**:
-  - Full local date/time (`YYYY-MM-DD HH:mm:ss`) with `#ticket` subtext.
-  - Intra-trade ratio ($\frac{\text{MFE}}{\text{MAE}}$) and MFE capture percentage.
+### 3.3 Strict TypeScript & ESLint (`eslint.config.js` & `tsconfig.app.json`)
+- `tsconfig.app.json` enables `strict: true`, `noUnusedLocals: true`, `noUnusedParameters: true`, `noUncheckedIndexedAccess: true`, and `verbatimModuleSyntax: true`.
+- `eslint.config.js` enforces `eslint-plugin-solid` rules (`solid/reactivity`, `solid/no-destructure`, `solid/prefer-for`, `solid/prefer-show`, `solid/no-react-specific-props`, `solid/no-innerhtml`).
 
 ---
 
 ## 4. State Management & Reactivity
 
-- Zero Virtual DOM: Signals (`createSignal`) and memos (`createMemo`) manage state.
-- WebSocket stream updates live equity and balance signals directly without triggering re-render of unrelated dashboard sections.
-- Metric mode transitions update formatting across all cards without reloading chart canvases.
+- **Zero Virtual DOM**: Signals (`createSignal`), memos (`createMemo`), and stores (`createStore` + `reconcile`) manage reactive state.
+- **Path-Based Live WebSocket Updates**: `useWebSocket` feeds 1Hz ticks into `setPortfolioStore('data', 'account', ...)` and `setPortfolioStore('data', 'stats', ...)`, updating only subscribed DOM nodes without cloning the entire analytics payload.
+- **List & Derived Data Hygiene**: JSX lists use `<For>` (never `.map()`), derived matrices (`dayMap`, `calendarCells`, `maxMagnitude`, `activeHourlyStats`, `activeDailyStats`) use `createMemo`, and all `ResizeObserver` / `setTimeout` / `AbortController` handles are cleaned up via `onCleanup`.
