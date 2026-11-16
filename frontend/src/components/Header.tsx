@@ -136,7 +136,7 @@ export const Header: Component<HeaderProps> = (props) => {
               title="View metrics in Profit ($)"
             >
               <DollarSign size={14} />
-              <span>$ Profit</span>
+              <span>Profit</span>
             </button>
             
             <button
@@ -149,7 +149,7 @@ export const Header: Component<HeaderProps> = (props) => {
               title="View metrics in Percent Gain (%)"
             >
               <Percent size={14} />
-              <span>% Gain</span>
+              <span>Gain</span>
             </button>
 
             <button
