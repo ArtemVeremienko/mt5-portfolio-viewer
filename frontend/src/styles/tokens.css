@@ -1,0 +1,57 @@
+/* ============================================================================
+ * 3-Layer Design System Tokens (Primitive -> Semantic -> Component)
+ * ============================================================================ */
+
+/* Layer 1: Primitive Tokens (exposed to Tailwind v4 via @theme) */
+@theme {
+  --color-navy-950: #090d16;
+  --color-navy-900: #0b0f19;
+  --color-slate-850: #172033;
+  --color-emerald-500: #10b981;
+  --color-rose-500: #f43f5e;
+  --color-amber-500: #f59e0b;
+  --color-purple-500: #a855f7;
+  --color-blue-500: #3b82f6;
+  --radius-card: 1rem;
+  --radius-control: 0.75rem;
+}
+
+/* Layer 2: Semantic Tokens (intent-based, themeable) */
+:root {
+  --surface-app: var(--color-navy-900);
+  --surface-elevated: rgba(15, 23, 42, 0.9);
+  --surface-sunken: rgba(2, 6, 23, 0.75);
+  --surface-chart: var(--color-navy-950);
+
+  --border-subtle: #1e293b;
+  --border-strong: #334155;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --status-profit: var(--color-emerald-500);
+  --status-loss: var(--color-rose-500);
+  --status-warn: var(--color-amber-500);
+  --status-r: var(--color-purple-500);
+  --status-info: var(--color-blue-500);
+
+  --chart-grid: rgba(30, 41, 59, 0.4);
+  --chart-crosshair: #475569;
+  --chart-bull: var(--color-emerald-500);
+  --chart-bear: var(--color-rose-500);
+  --chart-text: #94a3b8;
+}
+
+/* Layer 3: Component Tokens */
+:root {
+  --card-bg: var(--surface-elevated);
+  --card-border: var(--border-subtle);
+  --card-radius: var(--radius-card);
+
+  --control-radius: var(--radius-control);
+  --table-row-hover: rgba(30, 41, 59, 0.3);
+
+  --tooltip-bg: rgba(15, 23, 42, 0.95);
+  --tooltip-border: rgba(51, 65, 85, 0.9);
+}

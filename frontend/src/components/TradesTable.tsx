@@ -1,9 +1,12 @@
-import { Component, createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
+import { type Component, createMemo, createSignal, For, onMount, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { TradeDeal, OpenPosition, MetricMode, TradeScope, CashflowItem, TradeGrade, ReviewTag, ReviewTagKind, MistakeCategory } from '../types';
-import { Search, ArrowUpRight, ArrowDownRight, History, Download, X, ArrowUpDown, Tag, SlidersHorizontal, RotateCcw, CandlestickChart, Pencil, Trash2, Check } from 'lucide-solid';
+import type { TradeDeal, OpenPosition, MetricMode, TradeScope, CashflowItem, TradeGrade, ReviewTag, ReviewTagKind, MistakeCategory } from '../types';
+import { Search, History, Download, X, ArrowUpDown, Tag, SlidersHorizontal, RotateCcw, CandlestickChart, Pencil, Trash2, Check } from 'lucide-solid';
 import { getStorageItem, setStorageItem } from '../utils/storage';
 import { TradeChartGrid } from './TradeChartGrid';
+import { createTag, deleteTag as deleteTagApi, getTags, updateTag } from '../api/tags';
+import { saveTradeNote } from '../api/trades';
+import { useClickOutside } from '../primitives/useClickOutside';
 
 type HistoryColumnKey =
   | 'symbol'
@@ -164,9 +167,7 @@ interface TradesTableProps {
 }
 
 export const TradesTable: Component<TradesTableProps> = (props) => {
-  const [activeTab, setActiveTab] = createSignal<'open' | 'history' | 'playbook' | 'cashflows'>(
-    props.openTrades.length > 0 ? 'open' : 'history'
-  );
+  const [activeTab, setActiveTab] = createSignal<'open' | 'history' | 'playbook' | 'cashflows'>('history');
   const [searchQuery, setSearchQuery] = createSignal('');
   const [outcomeFilter, setOutcomeFilter] = createSignal<'all' | 'winners' | 'losers' | 'unreviewed'>('all');
   const [gradeFilter, setGradeFilter] = createSignal<'all' | 'A' | 'B' | 'C'>('all');
@@ -222,34 +223,24 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
 
   const fetchReviewTags = async () => {
     try {
-      const res = await fetch('/api/tags');
-      if (res.ok) {
-        const data = await res.json();
-        setReviewTags(data.tags || []);
-      }
+      const data = await getTags();
+      setReviewTags(data.tags || []);
     } catch (e) {
       console.error('Failed to load review tags:', e);
     }
   };
 
+  useClickOutside(
+    () => columnsMenuRef,
+    showColumnsMenu,
+    () => setShowColumnsMenu(false)
+  );
+
   onMount(() => {
+    if (props.openTrades.length > 0) {
+      setActiveTab('open');
+    }
     fetchReviewTags();
-    const handlePointerDown = (e: MouseEvent) => {
-      if (showColumnsMenu() && columnsMenuRef && !columnsMenuRef.contains(e.target as Node)) {
-        setShowColumnsMenu(false);
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showColumnsMenu()) {
-        setShowColumnsMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    onCleanup(() => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    });
   });
 
   const setupLibraryTags = createMemo(() =>
@@ -292,11 +283,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
       const key = part.toLowerCase();
       setMistakeTags((prev) => (prev.some((t) => t.toLowerCase() === key) ? prev : [...prev, part]));
       try {
-        await fetch('/api/tags', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kind: 'mistake', name: part, category: cat }),
-        });
+        await createTag({ kind: 'mistake', name: part, category: cat });
       } catch (e) {
         console.error('Failed to create custom mistake tag:', e);
       }
@@ -321,44 +308,37 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     if (!nextName) return;
     setSavingTagEdit(true);
     try {
-      const res = await fetch(`/api/tags/${tag.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: nextName,
-          category: tag.kind === 'mistake' ? editTagCategory() : undefined,
-        }),
+      const data = await updateTag(tag.id, {
+        name: nextName,
+        category: tag.kind === 'mistake' ? editTagCategory() : undefined,
       });
-      if (res.ok) {
-        const data = await res.json();
-        const updatedName: string = data.tag?.name || nextName;
-        const oldLower = tag.name.toLowerCase();
-        // Sync currently open journal modal state if applicable
-        if (tag.kind === 'setup' && setupTag().trim().toLowerCase() === oldLower) {
-          setSetupTag(updatedName);
-        } else if (tag.kind === 'exit' && exitTag().trim().toLowerCase() === oldLower) {
-          setExitTag(updatedName);
-        } else if (tag.kind === 'mistake') {
-          setMistakeTags((prev) => {
-            const seen = new Set<string>();
-            const next: string[] = [];
-            for (const m of prev) {
-              const val = m.toLowerCase() === oldLower ? updatedName : m;
-              if (!seen.has(val.toLowerCase())) {
-                seen.add(val.toLowerCase());
-                next.push(val);
-              }
+      const updatedName: string = data.tag?.name || nextName;
+      const oldLower = tag.name.toLowerCase();
+      // Sync currently open journal modal state if applicable
+      if (tag.kind === 'setup' && setupTag().trim().toLowerCase() === oldLower) {
+        setSetupTag(updatedName);
+      } else if (tag.kind === 'exit' && exitTag().trim().toLowerCase() === oldLower) {
+        setExitTag(updatedName);
+      } else if (tag.kind === 'mistake') {
+        setMistakeTags((prev) => {
+          const seen = new Set<string>();
+          const next: string[] = [];
+          for (const m of prev) {
+            const val = m.toLowerCase() === oldLower ? updatedName : m;
+            if (!seen.has(val.toLowerCase())) {
+              seen.add(val.toLowerCase());
+              next.push(val);
             }
-            return next;
-          });
-        }
-        if (tagFilter().trim().toLowerCase() === oldLower) {
-          setTagFilter(updatedName);
-        }
-        setEditingTagId(null);
-        await fetchReviewTags();
-        props.onNoteSaved?.();
+          }
+          return next;
+        });
       }
+      if (tagFilter().trim().toLowerCase() === oldLower) {
+        setTagFilter(updatedName);
+      }
+      setEditingTagId(null);
+      await fetchReviewTags();
+      props.onNoteSaved?.();
     } catch (e) {
       console.error('Failed to update tag:', e);
     } finally {
@@ -373,25 +353,23 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
         : `Delete unused tag "${tag.name}"?`;
     if (!window.confirm(msg)) return;
     try {
-      const res = await fetch(`/api/tags/${tag.id}`, { method: 'DELETE' });
-      if (res.ok) {
-        const oldLower = tag.name.toLowerCase();
-        if (tag.kind === 'setup' && setupTag().trim().toLowerCase() === oldLower) {
-          setSetupTag('');
-        } else if (tag.kind === 'exit' && exitTag().trim().toLowerCase() === oldLower) {
-          setExitTag('');
-        } else if (tag.kind === 'mistake') {
-          setMistakeTags((prev) => prev.filter((m) => m.toLowerCase() !== oldLower));
-        }
-        if (tagFilter().trim().toLowerCase() === oldLower) {
-          setTagFilter('');
-        }
-        if (editingTagId() === tag.id) {
-          setEditingTagId(null);
-        }
-        await fetchReviewTags();
-        props.onNoteSaved?.();
+      await deleteTagApi(tag.id);
+      const oldLower = tag.name.toLowerCase();
+      if (tag.kind === 'setup' && setupTag().trim().toLowerCase() === oldLower) {
+        setSetupTag('');
+      } else if (tag.kind === 'exit' && exitTag().trim().toLowerCase() === oldLower) {
+        setExitTag('');
+      } else if (tag.kind === 'mistake') {
+        setMistakeTags((prev) => prev.filter((m) => m.toLowerCase() !== oldLower));
       }
+      if (tagFilter().trim().toLowerCase() === oldLower) {
+        setTagFilter('');
+      }
+      if (editingTagId() === tag.id) {
+        setEditingTagId(null);
+      }
+      await fetchReviewTags();
+      props.onNoteSaved?.();
     } catch (e) {
       console.error('Failed to delete tag:', e);
     }
@@ -416,26 +394,20 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     if (!t) return;
     setSavingNote(true);
     try {
-      const res = await fetch('/api/trades/note', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ticket: t.ticket,
-          account_id: t.account_id,
-          note: noteText(),
-          setup_tag: setupTag(),
-          exit_tag: exitTag().trim(),
-          mistake_tag: mistakeTags().join(', '),
-          entry_grade: entryGrade(),
-          execution_grade: executionGrade(),
-          management_grade: managementGrade(),
-        }),
+      await saveTradeNote({
+        ticket: t.ticket,
+        account_id: t.account_id,
+        note: noteText(),
+        setup_tag: setupTag(),
+        exit_tag: exitTag().trim(),
+        mistake_tag: mistakeTags().join(', '),
+        entry_grade: entryGrade(),
+        execution_grade: executionGrade(),
+        management_grade: managementGrade(),
       });
-      if (res.ok) {
-        setEditingTrade(null);
-        await fetchReviewTags();
-        props.onNoteSaved?.();
-      }
+      setEditingTrade(null);
+      await fetchReviewTags();
+      props.onNoteSaved?.();
     } catch (e) {
       console.error('Failed to save note:', e);
     } finally {
@@ -751,7 +723,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
           </div>
 
           <Show when={activeTab() === 'history'}>
-            <div class="relative" ref={columnsMenuRef}>
+            <div class="relative" ref={(el) => { columnsMenuRef = el; }}>
               <button
                 onClick={() => setShowColumnsMenu((v) => !v)}
                 class={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
@@ -831,32 +803,36 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
           <div class="space-y-2.5">
             {/* Quick Outcome & Tag Filter Pills */}
             <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
-              {(['all', 'winners', 'losers', 'unreviewed'] as const).map((o) => (
-                <button
-                  onClick={() => { setOutcomeFilter(o); setPage(1); }}
-                  class={`px-2.5 py-1 rounded-lg font-medium border transition-colors capitalize ${
-                    outcomeFilter() === o
-                      ? 'bg-blue-600/20 text-blue-300 border-blue-500/40'
-                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                  }`}
-                >
-                  {o}
-                </button>
-              ))}
+              <For each={['all', 'winners', 'losers', 'unreviewed'] as const}>
+                {(o) => (
+                  <button
+                    onClick={() => { setOutcomeFilter(o); setPage(1); }}
+                    class={`px-2.5 py-1 rounded-lg font-medium border transition-colors capitalize ${
+                      outcomeFilter() === o
+                        ? 'bg-blue-600/20 text-blue-300 border-blue-500/40'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                    }`}
+                  >
+                    {o}
+                  </button>
+                )}
+              </For>
               <span class="mx-1 text-slate-700">|</span>
               <span class="text-slate-500 font-medium mr-0.5">Grade:</span>
-              {(['all', 'A', 'B', 'C'] as const).map((g) => (
-                <button
-                  onClick={() => { setGradeFilter(g); setPage(1); }}
-                  class={`px-2 py-1 rounded-lg font-medium border transition-colors ${
-                    gradeFilter() === g
-                      ? (g === 'all' ? 'bg-blue-600/20 text-blue-300 border-blue-500/40' : gradeBadgeClass(g))
-                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                  }`}
-                >
-                  {g === 'all' ? 'All' : g}
-                </button>
-              ))}
+              <For each={['all', 'A', 'B', 'C'] as const}>
+                {(g) => (
+                  <button
+                    onClick={() => { setGradeFilter(g); setPage(1); }}
+                    class={`px-2 py-1 rounded-lg font-medium border transition-colors ${
+                      gradeFilter() === g
+                        ? (g === 'all' ? 'bg-blue-600/20 text-blue-300 border-blue-500/40' : gradeBadgeClass(g))
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                    }`}
+                  >
+                    {g === 'all' ? 'All' : g}
+                  </button>
+                )}
+              </For>
               <Show when={tagFilter()}>
                 <button
                   onClick={() => { setTagFilter(''); setPage(1); }}
@@ -1472,33 +1448,37 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                     })()}
                   </div>
                   <div class="space-y-2">
-                    {[
+                    <For each={[
                       { label: 'Entry', value: entryGrade, setter: setEntryGrade },
                       { label: 'Execution', value: executionGrade, setter: setExecutionGrade },
                       { label: 'Position Mgmt', value: managementGrade, setter: setManagementGrade },
-                    ].map((dim) => (
-                      <div class="flex items-center justify-between gap-2">
-                        <span class="text-slate-300">{dim.label}</span>
-                        <div class="flex items-center gap-1">
-                          {GRADE_OPTIONS.map((g) => {
-                            const active = () => dim.value() === g;
-                            return (
-                              <button
-                                type="button"
-                                onClick={() => dim.setter(active() ? '' : g)}
-                                class={`w-7 h-6 rounded-md font-mono font-bold text-[11px] border transition-colors ${
-                                  active()
-                                    ? gradeBadgeClass(g)
-                                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
-                                }`}
-                              >
-                                {g}
-                              </button>
-                            );
-                          })}
+                    ]}>
+                      {(dim) => (
+                        <div class="flex items-center justify-between gap-2">
+                          <span class="text-slate-300">{dim.label}</span>
+                          <div class="flex items-center gap-1">
+                            <For each={GRADE_OPTIONS}>
+                              {(g) => {
+                                const active = () => dim.value() === g;
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => dim.setter(active() ? '' : g)}
+                                    class={`w-7 h-6 rounded-md font-mono font-bold text-[11px] border transition-colors ${
+                                      active()
+                                        ? gradeBadgeClass(g)
+                                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                                    }`}
+                                  >
+                                    {g}
+                                  </button>
+                                );
+                              }}
+                            </For>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )}
+                    </For>
                   </div>
                 </div>
                 {(() => {
@@ -1692,26 +1672,28 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                           </Show>
                         </div>
 
-                        {[
+                        <For each={[
                           { group: 'Entry', tags: entryMistakeTags },
                           { group: 'Exit / Mgmt', tags: exitMistakeTags },
-                        ].map((g) => (
-                          <div class="space-y-1">
-                            <span class="block text-[10px] uppercase tracking-wider text-slate-500">{g.group}</span>
-                            <div class="flex flex-wrap gap-1.5">
-                              <For each={g.tags()}>
-                                {(tag) =>
-                                  renderLibraryChip(
-                                    tag,
-                                    () => mistakeTags().some((m) => m.toLowerCase() === tag.name.toLowerCase()),
-                                    'bg-rose-500/20 text-rose-300 border-rose-500/40',
-                                    () => toggleMistakeTag(tag.name)
-                                  )
-                                }
-                              </For>
+                        ]}>
+                          {(g) => (
+                            <div class="space-y-1">
+                              <span class="block text-[10px] uppercase tracking-wider text-slate-500">{g.group}</span>
+                              <div class="flex flex-wrap gap-1.5">
+                                <For each={g.tags()}>
+                                  {(tag) =>
+                                    renderLibraryChip(
+                                      tag,
+                                      () => mistakeTags().some((m) => m.toLowerCase() === tag.name.toLowerCase()),
+                                      'bg-rose-500/20 text-rose-300 border-rose-500/40',
+                                      () => toggleMistakeTag(tag.name)
+                                    )
+                                  }
+                                </For>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          )}
+                        </For>
 
                         <Show when={mistakeTags().some((t) => !reviewTags().some((rt) => rt.kind === 'mistake' && rt.name.toLowerCase() === t.toLowerCase()))}>
                           <div class="flex flex-wrap gap-1.5 pt-0.5">

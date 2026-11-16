@@ -1,5 +1,5 @@
-import { Component, For, Show } from 'solid-js';
-import { MonthlyRow, MetricMode } from '../types';
+import { type Component, createMemo, For, Show } from 'solid-js';
+import type { MonthlyRow, MetricMode } from '../types';
 import { Calendar } from 'lucide-solid';
 
 interface MonthlyHeatmapProps {
@@ -16,7 +16,7 @@ export const MonthlyHeatmap: Component<MonthlyHeatmapProps> = (props) => {
   const getRowTotal = (row: MonthlyRow) =>
     props.mode === 'r' ? row.total_r : props.mode === 'currency' ? row.total_profit : row.total_pct;
 
-  const maxMagnitude = () => {
+  const maxMagnitude = createMemo(() => {
     let maxPos = 0;
     let maxNeg = 0;
     for (const row of props.matrix) {
@@ -29,9 +29,9 @@ export const MonthlyHeatmap: Component<MonthlyHeatmapProps> = (props) => {
       }
     }
     return { maxPos: maxPos || 1, maxNeg: maxNeg || 1 };
-  };
+  });
 
-  const formatCell = (m: { profit: number; r: number; pct: number } | null) => {
+  const formatCell = (m: { profit: number; r: number; pct: number } | null | undefined) => {
     if (!m) return null;
     if (props.mode === 'pct') {
       return (m.pct > 0 ? '+' : '') + m.pct.toFixed(2) + '%';
@@ -43,7 +43,7 @@ export const MonthlyHeatmap: Component<MonthlyHeatmapProps> = (props) => {
     }
   };
 
-  const getCellColor = (m: { profit: number; r: number; pct: number } | null) => {
+  const getCellColor = (m: { profit: number; r: number; pct: number } | null | undefined) => {
     if (!m) return 'bg-slate-900/40 text-slate-600';
     const val = getVal(m);
     const { maxPos, maxNeg } = maxMagnitude();

@@ -1,14 +1,16 @@
-import { Component, createSignal, onMount, onCleanup, createEffect, Show } from 'solid-js';
-import { 
-  createChart, 
-  IChartApi, 
-  ISeriesApi, 
-  AreaSeries, 
-  LineSeries, 
-  HistogramSeries, 
-  ColorType 
+import { type Component, createEffect, createSignal, For, on, onCleanup, onMount, Show } from 'solid-js';
+import {
+  createChart,
+  type IChartApi,
+  type ISeriesApi,
+  type LogicalRange,
+  type SeriesType,
+  AreaSeries,
+  LineSeries,
+  HistogramSeries,
+  ColorType,
 } from 'lightweight-charts';
-import { CurvePoint, MetricMode } from '../types';
+import type { CurvePoint, MetricMode } from '../types';
 
 interface PerformanceChartProps {
   curves: CurvePoint[];
@@ -54,10 +56,9 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   let chart: IChartApi | null = null;
   
   // Active series references for dynamic cleanup
-  let seriesList: ISeriesApi<any>[] = [];
-  let activeBarSeries: ISeriesApi<any> | null = null;
-  let activeHighlightSeries: ISeriesApi<any> | null = null;
-  let barDataMap = new Map<number, BarItemMeta>();
+  let seriesList: ISeriesApi<SeriesType>[] = [];
+  let activeHighlightSeries: ISeriesApi<'Histogram'> | null = null;
+  const barDataMap = new Map<number, BarItemMeta>();
   let lastHoveredTime: number | null = null;
   let isHandlingCrosshair = false;
 
@@ -91,20 +92,21 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   const [showChangeBars, setShowChangeBars] = createSignal(true);
 
   // Sync tab with global mode ONLY when user explicitly toggles header mode
-  let lastMode = props.mode;
-  createEffect(() => {
-    const currentMode = props.mode;
-    if (currentMode !== lastMode) {
-      lastMode = currentMode;
-      if (currentMode === 'r') {
-        setActiveTab('r');
-      } else if (currentMode === 'pct') {
-        setActiveTab('growth');
-      } else if (currentMode === 'currency') {
-        setActiveTab('balance');
-      }
-    }
-  });
+  createEffect(
+    on(
+      () => props.mode,
+      (currentMode) => {
+        if (currentMode === 'r') {
+          setActiveTab('r');
+        } else if (currentMode === 'pct') {
+          setActiveTab('growth');
+        } else if (currentMode === 'currency') {
+          setActiveTab('balance');
+        }
+      },
+      { defer: true }
+    )
+  );
 
   const initChart = () => {
     if (!chartContainer) return;
@@ -172,7 +174,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           if (time !== lastHoveredTime) {
             try {
               activeHighlightSeries.setData([{ time: curr.time, value: curr.value, color: curr.hoverColor }]);
-            } catch (e) {
+            } catch {
               // Safe guard against canvas edge cases
             }
             lastHoveredTime = time;
@@ -188,7 +190,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
                 if (timeX !== null && timeX !== undefined && !isNaN(timeX)) {
                   x = timeX;
                 }
-              } catch (err) {
+              } catch {
                 // Ignore coordinate calculation errors
               }
 
@@ -216,14 +218,14 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
             } else {
               setBarTooltip(null);
             }
-          } catch (e) {
+          } catch {
             setBarTooltip(null);
           }
         } else {
           if (lastHoveredTime !== null) {
             try {
               activeHighlightSeries.setData([]);
-            } catch (e) {
+            } catch {
               // Safe guard against canvas edge cases
             }
             lastHoveredTime = null;
@@ -243,12 +245,11 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     for (const s of seriesList) {
       try {
         chart.removeSeries(s);
-      } catch (e) {
+      } catch {
         // Ignored
       }
     }
     seriesList = [];
-    activeBarSeries = null;
     activeHighlightSeries = null;
     barDataMap.clear();
     lastHoveredTime = null;
@@ -259,11 +260,11 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
   const updateChartData = (shouldFitContent: boolean = false) => {
     if (!chart || !props.curves || props.curves.length === 0) return;
 
-    let prevLogicalRange: any = null;
+    let prevLogicalRange: LogicalRange | null = null;
     if (!shouldFitContent) {
       try {
         prevLogicalRange = chart.timeScale().getVisibleLogicalRange();
-      } catch (e) {
+      } catch {
         // Ignored
       }
     }
@@ -295,7 +296,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     if (!sortedData.length) return;
 
     const tab = activeTab();
-    const hasBars = showChangeBars() && tab !== 'drawdown';
+    void (showChangeBars() && tab !== 'drawdown');
 
     // Split scaling: upper region for main curves, bars take ~80% of chart space with dimmed colors
     chart.priceScale('right').applyOptions({
@@ -321,7 +322,6 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           priceScaleId: 'left',
           title: 'Change (%)',
         });
-        activeBarSeries = barSeries;
         const barItems = sortedData.map(d => {
           const val = d.change_pct ?? 0;
           const amt = d.change_amount ?? 0;
@@ -394,7 +394,6 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           priceScaleId: 'left',
           title: 'Trade Profit ($)',
         });
-        activeBarSeries = barSeries;
         const barItems = sortedData.map(d => {
           const val = d.change_amount ?? 0;
           const pct = d.change_pct ?? 0;
@@ -461,7 +460,6 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           priceScaleId: 'left',
           title: 'Trade Return ($)',
         });
-        activeBarSeries = barSeries;
         const barItems = sortedData.map(d => {
           const val = d.change_amount ?? 0;
           const pct = d.change_pct ?? 0;
@@ -539,7 +537,6 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
           },
           title: 'Trade R',
         });
-        activeBarSeries = barSeries;
         const barItems = sortedData.map(d => {
           const val = d.change_r ?? 0;
           const amt = d.change_amount ?? 0;
@@ -602,7 +599,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     if (!shouldFitContent && prevLogicalRange) {
       try {
         chart.timeScale().setVisibleLogicalRange(prevLogicalRange);
-      } catch (e) {
+      } catch {
         chart.timeScale().fitContent();
       }
     } else {
@@ -610,29 +607,31 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     }
   };
 
+  let resizeObserver: ResizeObserver | undefined;
+  const handleResize = () => {
+    if (chart && chartContainer && chartContainer.clientWidth > 0) {
+      chart.applyOptions({
+        width: chartContainer.clientWidth,
+        height: chartContainer.clientHeight,
+      });
+    }
+  };
+
   onMount(() => {
     initChart();
-    const handleResize = () => {
-      if (chart && chartContainer) {
-        chart.applyOptions({
-          width: chartContainer.clientWidth,
-          height: chartContainer.clientHeight,
-        });
-      }
-    };
     window.addEventListener('resize', handleResize);
-    let resizeObserver: ResizeObserver | undefined;
     if (chartContainer && typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => {
         handleResize();
       });
       resizeObserver.observe(chartContainer);
     }
-    onCleanup(() => {
-      window.removeEventListener('resize', handleResize);
-      resizeObserver?.disconnect();
-      if (chart) chart.remove();
-    });
+  });
+
+  onCleanup(() => {
+    window.removeEventListener('resize', handleResize);
+    resizeObserver?.disconnect();
+    if (chart) chart.remove();
   });
 
   createEffect(() => {
@@ -663,10 +662,10 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     const curvesChanged = 
       curves.length !== lastCurves.length ||
       (curves.length > 0 && (
-        curves[0].timestamp !== lastCurves[0]?.timestamp ||
-        curves[curves.length - 1].timestamp !== lastCurves[lastCurves.length - 1]?.timestamp ||
-        curves[curves.length - 1].balance !== lastCurves[lastCurves.length - 1]?.balance ||
-        curves[curves.length - 1].equity !== lastCurves[lastCurves.length - 1]?.equity
+        curves[0]?.timestamp !== lastCurves[0]?.timestamp ||
+        curves[curves.length - 1]?.timestamp !== lastCurves[lastCurves.length - 1]?.timestamp ||
+        curves[curves.length - 1]?.balance !== lastCurves[lastCurves.length - 1]?.balance ||
+        curves[curves.length - 1]?.equity !== lastCurves[lastCurves.length - 1]?.equity
       ));
 
     // If series already exist and nothing relevant changed (e.g. background 1s tick that didn't modify curves), skip update
@@ -751,18 +750,20 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
 
         {/* Timeframe Filter Buttons */}
         <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
-          {['7D', '1M', '3M', 'YTD', '1Y', 'ALL'].map((tf) => (
-            <button
-              class={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
-                activeTimeframe() === tf
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              onClick={() => setActiveTimeframe(tf)}
-            >
-              {tf}
-            </button>
-          ))}
+          <For each={['7D', '1M', '3M', 'YTD', '1Y', 'ALL']}>
+            {(tf) => (
+              <button
+                class={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
+                  activeTimeframe() === tf
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                onClick={() => setActiveTimeframe(tf)}
+              >
+                {tf}
+              </button>
+            )}
+          </For>
         </div>
       </div>
 
@@ -941,7 +942,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
 
       {/* Lightweight Chart Canvas Container with Anchored Tooltip */}
       <div class="w-full flex-1 min-h-[375px] rounded-xl relative border border-slate-950 shadow-inner">
-        <div ref={chartContainer} class="w-full h-full rounded-xl overflow-hidden" />
+        <div ref={(el) => { chartContainer = el; }} class="w-full h-full rounded-xl overflow-hidden" />
         
         <Show when={barTooltip()}>
           <div

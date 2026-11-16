@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, onCleanup, Show } from 'solid-js';
+import { type Component, createEffect, createSignal, onCleanup, Show } from 'solid-js';
 import {
   createChart,
   createSeriesMarkers,
@@ -7,12 +7,13 @@ import {
   HistogramSeries,
   ColorType,
   LineStyle,
-  IChartApi,
-  UTCTimestamp,
-  SeriesMarker,
-  Time,
+  type IChartApi,
+  type UTCTimestamp,
+  type SeriesMarker,
+  type Time,
 } from 'lightweight-charts';
-import { TradeDeal } from '../types';
+import type { TradeDeal } from '../types';
+import { getTradeCandles, type TradeCandlesResponse } from '../api/trades';
 import { Loader2, CandlestickChart, Database, WifiOff } from 'lucide-solid';
 
 export interface OhlcBar {
@@ -87,14 +88,16 @@ function detectPriceFormat(bars: OhlcBar[], trade: TradeDeal): { type: 'price'; 
 }
 
 function findBarTime(bars: OhlcBar[], targetTs: number, tfSeconds: number): UTCTimestamp | null {
-  if (!bars.length || !targetTs) return null;
-  if (targetTs < bars[0].time) {
-    return bars[0].time - targetTs <= tfSeconds * 2 ? (bars[0].time as UTCTimestamp) : null;
+  const first = bars[0];
+  const last = bars[bars.length - 1];
+  if (!first || !last || !targetTs) return null;
+  if (targetTs < first.time) {
+    return first.time - targetTs <= tfSeconds * 2 ? (first.time as UTCTimestamp) : null;
   }
-  if (targetTs > bars[bars.length - 1].time + tfSeconds * 2) {
+  if (targetTs > last.time + tfSeconds * 2) {
     return null;
   }
-  let best = bars[0].time;
+  let best = first.time;
   for (const b of bars) {
     if (b.time <= targetTs) {
       best = b.time;
@@ -109,9 +112,14 @@ const CandlePane: Component<CandlePaneProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
   let chart: IChartApi | undefined;
   let ro: ResizeObserver | undefined;
+  let rafId = 0;
   let disposed = false;
 
   const cleanupChart = () => {
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
     ro?.disconnect();
     ro = undefined;
     if (chart) {
@@ -131,12 +139,15 @@ const CandlePane: Component<CandlePaneProps> = (props) => {
     const height = containerRef.clientHeight || 220;
 
     ro = new ResizeObserver(() => {
-      if (chart && containerRef) {
-        chart.applyOptions({
-          width: containerRef.clientWidth,
-          height: containerRef.clientHeight,
-        });
-      }
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        if (chart && containerRef && containerRef.clientWidth > 0 && containerRef.clientHeight > 0) {
+          chart.applyOptions({
+            width: containerRef.clientWidth,
+            height: containerRef.clientHeight,
+          });
+        }
+      });
     });
     ro.observe(containerRef);
 
@@ -210,7 +221,7 @@ const CandlePane: Component<CandlePaneProps> = (props) => {
           }),
         });
         bandSeries.setData([
-          { time: inRangeBars[0].time as UTCTimestamp, value: 1, color: bandColor },
+          { time: inRangeBars[0]!.time as UTCTimestamp, value: 1, color: bandColor },
         ]);
       }
 
@@ -350,14 +361,14 @@ const CandlePane: Component<CandlePaneProps> = (props) => {
           </div>
         }
       >
-        <div ref={containerRef} class={`w-full ${props.heightClass}`} />
+        <div ref={(el) => { containerRef = el; }} class={`w-full ${props.heightClass}`} />
       </Show>
     </div>
   );
 };
 
 export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
-  const [data, setData] = createSignal<CandlesResponse | null>(null);
+  const [data, setData] = createSignal<TradeCandlesResponse | CandlesResponse | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal('');
 
@@ -370,16 +381,13 @@ export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
     setLoading(true);
     setError('');
 
-    fetch(`/api/trades/${ticket}/candles`, { signal: controller.signal })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return (await res.json()) as CandlesResponse;
-      })
+    getTradeCandles(ticket, false, controller.signal)
       .then((json) => {
         if (!controller.signal.aborted) setData(json);
       })
-      .catch((err) => {
-        if (!controller.signal.aborted && err?.name !== 'AbortError') {
+      .catch((err: unknown) => {
+        const isAbort = err instanceof Error && err.name === 'AbortError';
+        if (!controller.signal.aborted && !isAbort) {
           setError(String(err));
         }
       })

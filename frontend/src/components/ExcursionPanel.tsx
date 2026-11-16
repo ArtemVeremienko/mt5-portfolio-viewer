@@ -1,15 +1,14 @@
-import { Component, createSignal, For, Show } from 'solid-js';
-import { ExcursionStats, ExcursionTrade, MetricMode } from '../types';
-import { 
-  Activity, 
-  ShieldAlert, 
-  TrendingUp, 
-  Target, 
-  Crosshair, 
-  Zap, 
+import { type Component, createSignal, For, onCleanup, Show } from 'solid-js';
+import type { ExcursionStats, ExcursionTrade, MetricMode } from '../types';
+import {
+  Activity,
+  ShieldAlert,
+  TrendingUp,
+  Target,
+  Crosshair,
   AlertTriangle,
   Layers,
-  Sparkles
+  Sparkles,
 } from 'lucide-solid';
 
 interface ExcursionPanelProps {
@@ -25,7 +24,10 @@ export const ExcursionPanel: Component<ExcursionPanelProps> = (props) => {
   const [hoveredTrade, setHoveredTrade] = createSignal<ExcursionTrade | null>(null);
   const [mousePos, setMousePos] = createSignal<{ x: number; y: number; placeBelow: boolean }>({ x: 0, y: 0, placeBelow: false });
 
-  let leaveTimer: any = null;
+  let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+  onCleanup(() => {
+    if (leaveTimer) clearTimeout(leaveTimer);
+  });
 
   const handlePointEnter = (e: MouseEvent, t: ExcursionTrade) => {
     if (leaveTimer) {

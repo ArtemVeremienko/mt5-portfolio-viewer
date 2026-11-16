@@ -1,6 +1,6 @@
-import { Component, For } from 'solid-js';
-import { PortfolioStats, SymbolStat, HourlyStat, DayOfWeekStat, MetricMode } from '../types';
-import { PieChart, Clock, BarChart2 } from 'lucide-solid';
+import { type Component, For } from 'solid-js';
+import type { PortfolioStats, SymbolStat, HourlyStat, DayOfWeekStat, MetricMode } from '../types';
+import { PieChart } from 'lucide-solid';
 
 interface TradingStatsProps {
   stats: PortfolioStats | null;
