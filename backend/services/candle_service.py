@@ -7,6 +7,8 @@ from typing import Any
 from backend.domain.protocols import TradingGateway
 from backend.infrastructure.db.uow import SqliteUnitOfWork
 
+_MIN_EXPECTED_BARS = 80
+
 
 def get_or_fetch_trade_candles(
     db_path: Path,
@@ -18,7 +20,11 @@ def get_or_fetch_trade_candles(
     with SqliteUnitOfWork(db_path) as uow:
         cached = uow.candles.get_by_ticket(ticket)
         has_all = all(len(cached.get(tf, [])) > 0 for tf in ("h1", "m5", "m1"))
-        if has_all and not refresh:
+        short_tfs = [
+            tf for tf in ("h1", "m5", "m1") if len(cached.get(tf, [])) < _MIN_EXPECTED_BARS
+        ]
+        should_auto_refresh = bool(short_tfs) and gateway.is_connected()
+        if has_all and not refresh and not should_auto_refresh:
             return {
                 "ticket": ticket,
                 "cached": True,
@@ -45,11 +51,13 @@ def get_or_fetch_trade_candles(
     if not symbol or open_time <= 0:
         return None
 
-    missing_tfs = (
-        ["h1", "m5", "m1"]
-        if refresh
-        else [tf for tf in ("h1", "m5", "m1") if len(cached.get(tf, [])) == 0]
-    )
+    if refresh:
+        missing_tfs = ["h1", "m5", "m1"]
+    else:
+        empty_tfs = {tf for tf in ("h1", "m5", "m1") if len(cached.get(tf, [])) == 0}
+        if should_auto_refresh:
+            empty_tfs.update(short_tfs)
+        missing_tfs = [tf for tf in ("h1", "m5", "m1") if tf in empty_tfs]
     fetched = (
         gateway.get_trade_mtf_candles(
             symbol=symbol,

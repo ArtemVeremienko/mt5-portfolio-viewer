@@ -14,7 +14,7 @@ import {
 } from 'lightweight-charts';
 import type { TradeDeal } from '../types';
 import { getTradeCandles, type TradeCandlesResponse } from '../api/trades';
-import { Loader2, CandlestickChart, Database, WifiOff } from 'lucide-solid';
+import { Loader2, CandlestickChart, Database, RefreshCw, WifiOff } from 'lucide-solid';
 
 export interface OhlcBar {
   time: number;
@@ -371,9 +371,11 @@ export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
   const [data, setData] = createSignal<TradeCandlesResponse | CandlesResponse | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal('');
+  const [refreshNonce, setRefreshNonce] = createSignal(0);
 
   createEffect(() => {
     const ticket = props.trade.ticket;
+    const nonce = refreshNonce();
     if (!ticket) return;
 
     const controller = new AbortController();
@@ -381,7 +383,7 @@ export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
     setLoading(true);
     setError('');
 
-    getTradeCandles(ticket, false, controller.signal)
+    getTradeCandles(ticket, nonce > 0, controller.signal)
       .then((json) => {
         if (!controller.signal.aborted) setData(json);
       })
@@ -455,6 +457,16 @@ export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
                     MT5 Offline
                   </span>
                 </Show>
+                <button
+                  type="button"
+                  onClick={() => setRefreshNonce((n) => n + 1)}
+                  disabled={loading()}
+                  title="Re-fetch H1/M5/M1 candles from MT5"
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw size={10} class={loading() ? 'animate-spin' : ''} />
+                  Refresh
+                </button>
               </>
             )}
           </Show>

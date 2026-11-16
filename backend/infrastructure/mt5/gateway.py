@@ -415,26 +415,47 @@ class LiveMT5Gateway:
         with contextlib.suppress(Exception):
             mt5.symbol_select(symbol, True)
 
+        open_dt = datetime.fromtimestamp(int(open_time), tz=UTC)
         for key in target_keys:
             tf, sec = tf_map[key]
             try:
-                from_ts = max(0, int(open_time) - bars_before * sec)
-                to_ts = end_ts + bars_after * sec
-                from_dt = datetime.fromtimestamp(from_ts, tz=UTC)
-                to_dt = datetime.fromtimestamp(to_ts, tz=UTC)
-                rates = mt5.copy_rates_range(symbol, tf, from_dt, to_dt)
-                if rates is None or len(rates) == 0:
+                # 1. Fetch exact pre-entry trading bars (skips weekends/overnight closures)
+                pre_rates = mt5.copy_rates_from(symbol, tf, open_dt, bars_before)
+                # 2. Fetch in-trade and post-exit bars (pad forward to span weekend gaps)
+                post_window = max(bars_after * sec * 3, 3 * 86400)
+                to_dt = datetime.fromtimestamp(end_ts + post_window, tz=UTC)
+                post_rates = mt5.copy_rates_range(symbol, tf, open_dt, to_dt)
+
+                merged: dict[int, dict[str, Any]] = {}
+                if pre_rates is not None:
+                    for r in pre_rates:
+                        ts = int(r["time"])
+                        merged[ts] = {
+                            "time": ts,
+                            "open": float(r["open"]),
+                            "high": float(r["high"]),
+                            "low": float(r["low"]),
+                            "close": float(r["close"]),
+                        }
+                if post_rates is not None:
+                    post_after_count = 0
+                    for r in post_rates:
+                        ts = int(r["time"])
+                        if ts > end_ts:
+                            if post_after_count >= bars_after:
+                                break
+                            post_after_count += 1
+                        merged[ts] = {
+                            "time": ts,
+                            "open": float(r["open"]),
+                            "high": float(r["high"]),
+                            "low": float(r["low"]),
+                            "close": float(r["close"]),
+                        }
+
+                if not merged:
                     continue
-                bars = [
-                    {
-                        "time": int(r["time"]),
-                        "open": float(r["open"]),
-                        "high": float(r["high"]),
-                        "low": float(r["low"]),
-                        "close": float(r["close"]),
-                    }
-                    for r in rates
-                ]
+                bars = [merged[ts] for ts in sorted(merged)]
                 if len(bars) > max_bars:
                     bars = bars[-max_bars:]
                 result[key] = bars
