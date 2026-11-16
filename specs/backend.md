@@ -44,7 +44,7 @@ backend/
 
 ## 3. Data Model & SQLite Schema
 
-Stored locally in `data/portfolio.db` using `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON`, `PRAGMA busy_timeout=5000`, and versioned migrations tracked via `PRAGMA user_version` (currently **v3**):
+Stored locally in `data/portfolio.db` using `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON`, `PRAGMA busy_timeout=5000`, and versioned migrations tracked via `PRAGMA user_version` (currently **v4**):
 
 ### `accounts` Table
 - `login` (PRIMARY KEY): MT5 account login number.
@@ -53,7 +53,7 @@ Stored locally in `data/portfolio.db` using `PRAGMA journal_mode=WAL`, `PRAGMA f
 
 ### `deals` Table
 Stores closed trade deals (`entry = DEAL_ENTRY_OUT`) and balance operations (`type = 2`):
-- `ticket` (PRIMARY KEY), `order_id`, `account_id` (FK -> `accounts.login`).
+- Composite `PRIMARY KEY (account_id, ticket)` (prevents multi-broker ticket collisions), `order_id`, `account_id` (FK -> `accounts.login`).
 - `time`, `time_msc`, `type` (`0`=Buy, `1`=Sell, `2`=Balance), `entry`.
 - `symbol`, `volume`, `price`, `profit`, `swap`, `commission`, `sl`, `tp`, `open_time`, `open_price`, `comment`, `magic`.
 - `risk_r`, `r_multiple`, `mae_price`, `mfe_price`, `mae_pips`, `mfe_pips`, `mae_amount`, `mfe_amount`, `mae_r`, `mfe_r`.
@@ -68,7 +68,7 @@ Stores closed trade deals (`entry = DEAL_ENTRY_OUT`) and balance operations (`ty
 - `trade_note_tags`: Normalized join table `(ticket, tag_id)` with `ON DELETE CASCADE` to `trade_notes(ticket)` and `review_tags(id)` for fast SQL usage counts, merges, and cascading deletes.
 
 ### `trade_candles` Table
-- Composite PK `(ticket, timeframe)` caching `candles_json` (`h1`, `m5`, `m1`) and `cached_at`.
+- Composite PK `(ticket, timeframe)` caching zlib-compressed `candles_blob` (with legacy `candles_json` fallback), `cached_at` (`idx_trade_candles_cached_at`), and TTL eviction.
 
 ---
 

@@ -57,6 +57,7 @@ def _poll_live_snapshot(
     open_pos = gateway.get_open_positions()
     now_ts = int(time.time())
     if should_persist_snapshot:
+        retention_cutoff = now_ts - (30 * 86400)
         with SqliteUnitOfWork(db_path) as uow:
             uow.snapshots.append(
                 int(acc_info["login"]),
@@ -69,6 +70,7 @@ def _poll_live_snapshot(
                     "cumulative_r": 0.0,
                 },
             )
+            uow.snapshots.prune_older_than(retention_cutoff)
     return {
         "type": "live_update",
         "timestamp": now_ts,

@@ -100,3 +100,31 @@ def test_run_migrations_creates_schema_indexes_and_normalizes_tags(tmp_path: Pat
         # Idempotent re-run
         run_migrations(conn)
         assert conn.execute("PRAGMA user_version;").fetchone()[0] == LATEST_SCHEMA_VERSION
+        assert LATEST_SCHEMA_VERSION == 4
+
+        # Verify setup & exit tags were also normalized into trade_note_tags
+        assert ("setup", "London Breakout") in linked_pairs
+        assert ("exit", "TP") in linked_pairs
+
+        # Verify trade_candles index & deals composite PK
+        assert "idx_trade_candles_cached_at" in indexes
+        assert "idx_deals_ticket" in indexes
+        fk_errors = conn.execute("PRAGMA foreign_key_check;").fetchall()
+        assert fk_errors == []
+
+
+def test_v4_migration_on_copy_of_real_db_if_present(tmp_path: Path) -> None:
+    real_db = Path("data/portfolio.db")
+    if not real_db.exists():
+        return
+    copy_db = tmp_path / "copy_portfolio.db"
+    copy_db.write_bytes(real_db.read_bytes())
+
+    with get_connection(copy_db) as conn:
+        deals_before = conn.execute("SELECT COUNT(*) FROM deals").fetchone()[0]
+        notes_before = conn.execute("SELECT COUNT(*) FROM trade_notes").fetchone()[0]
+        run_migrations(conn)
+        assert conn.execute("PRAGMA user_version;").fetchone()[0] == 4
+        assert conn.execute("SELECT COUNT(*) FROM deals").fetchone()[0] == deals_before
+        assert conn.execute("SELECT COUNT(*) FROM trade_notes").fetchone()[0] == notes_before
+        assert conn.execute("PRAGMA foreign_key_check;").fetchall() == []

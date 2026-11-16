@@ -31,40 +31,46 @@ def get_portfolio(
     scope: str = "all",
     risk_pct: Annotated[float | None, Query(gt=0.0, le=1.0)] = None,
 ) -> dict[str, Any]:
-    with SqliteUnitOfWork(db_path) as uow:
-        accounts = uow.accounts.get_all()
-
-    if not accounts:
-        synced_login = perform_sync(db_path, gateway)
-        if synced_login is not None:
-            request.app.state.active_login = synced_login
-        with SqliteUnitOfWork(db_path) as uow:
-            accounts = uow.accounts.get_all()
-
     account_info: dict[str, Any] = {}
     deals: list[dict[str, Any]] = []
     notes_map: dict[int, dict[str, Any]] = {}
+    need_sync = False
+    target_login: int | None = None
 
-    if all_accounts and accounts:
-        logins = [int(a["login"]) for a in accounts]
-        with SqliteUnitOfWork(db_path) as uow:
-            deals = uow.deals.get_for_accounts(logins)
-            notes_map = uow.journal.get_all_notes()
-        account_info = build_combined_account(accounts)
-    else:
-        target_login = login or request.app.state.active_login
-        if target_login is None and accounts:
-            target_login = int(accounts[0]["login"])
-        if target_login is not None:
-            with SqliteUnitOfWork(db_path) as uow:
+    with SqliteUnitOfWork(db_path) as uow:
+        accounts = uow.accounts.get_all()
+        if accounts:
+            if all_accounts:
+                logins = [int(a["login"]) for a in accounts]
+                deals = uow.deals.get_for_accounts(logins)
+                notes_map = uow.journal.get_notes_for_accounts(logins)
+                account_info = build_combined_account(accounts)
+            else:
+                target_login = login or request.app.state.active_login or int(accounts[0]["login"])
                 account_info = uow.accounts.get_by_login(target_login) or {}
                 deals = uow.deals.get_by_account(target_login)
                 notes_map = uow.journal.get_notes_by_account(target_login)
-            if not deals:
-                perform_sync(db_path, gateway)
-                with SqliteUnitOfWork(db_path) as uow:
-                    deals = uow.deals.get_by_account(target_login)
-                    account_info = uow.accounts.get_by_login(target_login) or {}
+                if not deals:
+                    need_sync = True
+        else:
+            need_sync = True
+
+    if need_sync:
+        synced_login = perform_sync(db_path, gateway)
+        if synced_login is not None and request.app.state.active_login is None:
+            request.app.state.active_login = synced_login
+        with SqliteUnitOfWork(db_path) as uow:
+            accounts = uow.accounts.get_all()
+            if all_accounts and accounts:
+                logins = [int(a["login"]) for a in accounts]
+                deals = uow.deals.get_for_accounts(logins)
+                notes_map = uow.journal.get_notes_for_accounts(logins)
+                account_info = build_combined_account(accounts)
+            elif accounts:
+                resolved_login = target_login or request.app.state.active_login or int(accounts[0]["login"])
+                account_info = uow.accounts.get_by_login(resolved_login) or {}
+                deals = uow.deals.get_by_account(resolved_login)
+                notes_map = uow.journal.get_notes_by_account(resolved_login)
 
     start_time: int | None = None
     now_ts = int(time.time())

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+import zlib
 from typing import Any
 
 from backend.infrastructure.db.migrations import (
@@ -83,7 +84,7 @@ class DealRepository:
                 comment, magic, risk_r, r_multiple,
                 mae_price, mfe_price, mae_pips, mfe_pips, mae_amount, mfe_amount, mae_r, mfe_r
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(ticket) DO UPDATE SET
+            ON CONFLICT(account_id, ticket) DO UPDATE SET
                 profit=excluded.profit,
                 swap=excluded.swap,
                 commission=excluded.commission,
@@ -214,6 +215,12 @@ class SnapshotRepository:
             ),
         )
 
+    def prune_older_than(self, cutoff_ts: int) -> int:
+        cur = self._conn.execute(
+            "DELETE FROM equity_snapshots WHERE timestamp < ?", (cutoff_ts,)
+        )
+        return cur.rowcount
+
 
 class JournalRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
@@ -238,6 +245,21 @@ class JournalRepository:
                    entry_grade, execution_grade, management_grade, updated_at
             FROM trade_notes
             """
+        ).fetchall()
+        return {int(r["ticket"]): dict(r) for r in rows}
+
+    def get_notes_for_accounts(self, account_ids: list[int]) -> dict[int, dict[str, Any]]:
+        if not account_ids:
+            return {}
+        placeholders = ",".join("?" for _ in account_ids)
+        rows = self._conn.execute(
+            f"""
+            SELECT ticket, note, setup_tag, mistake_tag, exit_tag,
+                   entry_grade, execution_grade, management_grade, updated_at
+            FROM trade_notes
+            WHERE account_id IN ({placeholders})
+            """,
+            tuple(account_ids),
         ).fetchall()
         return {int(r["ticket"]): dict(r) for r in rows}
 
@@ -292,13 +314,22 @@ class JournalRepository:
             ),
         )
 
-        if trimmed_setup:
-            register_tag_cursor(cursor, "setup", trimmed_setup, "", is_default=0)
-        if trimmed_exit:
-            register_tag_cursor(cursor, "exit", trimmed_exit, "", is_default=0)
-
-        # Sync normalized trade_note_tags join table for mistakes
+        # Sync normalized trade_note_tags join table across setup, exit, and mistake tags
         cursor.execute("DELETE FROM trade_note_tags WHERE ticket = ?", (ticket,))
+        if trimmed_setup:
+            setup_id = register_tag_cursor(cursor, "setup", trimmed_setup, "", is_default=0)
+            if setup_id is not None:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO trade_note_tags (ticket, tag_id) VALUES (?, ?)",
+                    (ticket, setup_id),
+                )
+        if trimmed_exit:
+            exit_id = register_tag_cursor(cursor, "exit", trimmed_exit, "", is_default=0)
+            if exit_id is not None:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO trade_note_tags (ticket, tag_id) VALUES (?, ?)",
+                    (ticket, exit_id),
+                )
         for m_val in parsed_mistakes:
             tag_id = register_tag_cursor(cursor, "mistake", m_val, "entry", is_default=0)
             if tag_id is not None:
@@ -308,32 +339,15 @@ class JournalRepository:
                 )
 
     def _compute_usage_counts(self) -> dict[tuple[str, str], int]:
-        counts: dict[tuple[str, str], int] = {}
-        setup_rows = self._conn.execute(
-            "SELECT LOWER(TRIM(setup_tag)) AS k, COUNT(*) AS cnt FROM trade_notes WHERE TRIM(setup_tag) != '' GROUP BY k"
-        ).fetchall()
-        for r in setup_rows:
-            counts[("setup", str(r["k"]))] = int(r["cnt"])
-
-        exit_rows = self._conn.execute(
-            "SELECT LOWER(TRIM(exit_tag)) AS k, COUNT(*) AS cnt FROM trade_notes WHERE TRIM(exit_tag) != '' GROUP BY k"
-        ).fetchall()
-        for r in exit_rows:
-            counts[("exit", str(r["k"]))] = int(r["cnt"])
-
-        mistake_rows = self._conn.execute(
+        rows = self._conn.execute(
             """
-            SELECT rt.name_lower AS k, COUNT(tnt.ticket) AS cnt
+            SELECT rt.kind, rt.name_lower, COUNT(tnt.ticket) AS cnt
             FROM trade_note_tags tnt
             JOIN review_tags rt ON rt.id = tnt.tag_id
-            WHERE rt.kind = 'mistake'
-            GROUP BY rt.name_lower
+            GROUP BY rt.kind, rt.name_lower
             """
         ).fetchall()
-        for r in mistake_rows:
-            counts[("mistake", str(r["k"]))] = int(r["cnt"])
-
-        return counts
+        return {(str(r["kind"]), str(r["name_lower"])): int(r["cnt"]) for r in rows}
 
     def get_review_tags(self, kind: str | None = None) -> list[dict[str, Any]]:
         if kind and kind in VALID_TAG_KINDS:
@@ -396,37 +410,35 @@ class JournalRepository:
             "usage_count": counts.get((clean_kind, name_lower), 0),
         }
 
-    def _sync_mistake_tag_text_for_tickets(self, tickets: list[int]) -> None:
-        """Rebuild trade_notes.mistake_tag CSV string from normalized trade_note_tags."""
+    def _sync_tag_text_for_tickets(self, kind: str, tickets: list[int]) -> None:
+        """Rebuild denormalized tag text column on trade_notes from normalized trade_note_tags."""
         for ticket in tickets:
             rows = self._conn.execute(
                 """
                 SELECT rt.name
                 FROM trade_note_tags tnt
                 JOIN review_tags rt ON rt.id = tnt.tag_id
-                WHERE tnt.ticket = ?
+                WHERE tnt.ticket = ? AND rt.kind = ?
                 ORDER BY rt.name_lower ASC
                 """,
-                (ticket,),
+                (ticket, kind),
             ).fetchall()
             joined = ", ".join(str(r["name"]) for r in rows)
-            self._conn.execute(
-                "UPDATE trade_notes SET mistake_tag = ? WHERE ticket = ?",
-                (joined, ticket),
-            )
-
-    def _rename_tag_in_notes(self, kind: str, old_name: str, new_name: str) -> None:
-        old_lower = old_name.strip().lower()
-        if kind == "setup":
-            self._conn.execute(
-                "UPDATE trade_notes SET setup_tag = ? WHERE LOWER(TRIM(setup_tag)) = ?",
-                (new_name, old_lower),
-            )
-        elif kind == "exit":
-            self._conn.execute(
-                "UPDATE trade_notes SET exit_tag = ? WHERE LOWER(TRIM(exit_tag)) = ?",
-                (new_name, old_lower),
-            )
+            if kind == "setup":
+                self._conn.execute(
+                    "UPDATE trade_notes SET setup_tag = ? WHERE ticket = ?",
+                    (joined, ticket),
+                )
+            elif kind == "exit":
+                self._conn.execute(
+                    "UPDATE trade_notes SET exit_tag = ? WHERE ticket = ?",
+                    (joined, ticket),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE trade_notes SET mistake_tag = ? WHERE ticket = ?",
+                    (joined, ticket),
+                )
 
     def update_review_tag(
         self,
@@ -459,23 +471,19 @@ class JournalRepository:
         ).fetchone()
         if conflict:
             target_id = int(conflict["id"])
-            if kind == "mistake":
-                affected = [
-                    int(r["ticket"])
-                    for r in self._conn.execute(
-                        "SELECT ticket FROM trade_note_tags WHERE tag_id = ?", (tag_id,)
-                    ).fetchall()
-                ]
-                for ticket in affected:
-                    self._conn.execute(
-                        "INSERT OR IGNORE INTO trade_note_tags (ticket, tag_id) VALUES (?, ?)",
-                        (ticket, target_id),
-                    )
-                self._conn.execute("DELETE FROM review_tags WHERE id = ?", (tag_id,))
-                self._sync_mistake_tag_text_for_tickets(affected)
-            else:
-                self._rename_tag_in_notes(kind, old_name, str(conflict["name"]))
-                self._conn.execute("DELETE FROM review_tags WHERE id = ?", (tag_id,))
+            affected = [
+                int(r["ticket"])
+                for r in self._conn.execute(
+                    "SELECT ticket FROM trade_note_tags WHERE tag_id = ?", (tag_id,)
+                ).fetchall()
+            ]
+            for ticket in affected:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO trade_note_tags (ticket, tag_id) VALUES (?, ?)",
+                    (ticket, target_id),
+                )
+            self._conn.execute("DELETE FROM review_tags WHERE id = ?", (tag_id,))
+            self._sync_tag_text_for_tickets(kind, affected)
 
             counts = self._compute_usage_counts()
             return {
@@ -494,16 +502,13 @@ class JournalRepository:
             (new_name, new_lower, new_cat, tag_id),
         )
         if new_name != old_name:
-            if kind == "mistake":
-                affected = [
-                    int(r["ticket"])
-                    for r in self._conn.execute(
-                        "SELECT ticket FROM trade_note_tags WHERE tag_id = ?", (tag_id,)
-                    ).fetchall()
-                ]
-                self._sync_mistake_tag_text_for_tickets(affected)
-            else:
-                self._rename_tag_in_notes(kind, old_name, new_name)
+            affected = [
+                int(r["ticket"])
+                for r in self._conn.execute(
+                    "SELECT ticket FROM trade_note_tags WHERE tag_id = ?", (tag_id,)
+                ).fetchall()
+            ]
+            self._sync_tag_text_for_tickets(kind, affected)
 
         counts = self._compute_usage_counts()
         return {
@@ -526,43 +531,19 @@ class JournalRepository:
 
         kind = str(row["kind"])
         name = str(row["name"])
-        name_lower = name.strip().lower()
-        affected_count = 0
-        if kind == "setup":
-            cur = self._conn.execute(
-                "UPDATE trade_notes SET setup_tag = '' WHERE LOWER(TRIM(setup_tag)) = ?",
-                (name_lower,),
-            )
-            affected_count = cur.rowcount
-        elif kind == "exit":
-            cur = self._conn.execute(
-                "UPDATE trade_notes SET exit_tag = '' WHERE LOWER(TRIM(exit_tag)) = ?",
-                (name_lower,),
-            )
-            affected_count = cur.rowcount
-        elif kind == "mistake":
-            affected = [
-                int(r["ticket"])
-                for r in self._conn.execute(
-                    "SELECT ticket FROM trade_note_tags WHERE tag_id = ?", (tag_id,)
-                ).fetchall()
-            ]
-            affected_count = len(affected)
-            self._conn.execute("DELETE FROM review_tags WHERE id = ?", (tag_id,))
-            self._sync_mistake_tag_text_for_tickets(affected)
-            return {
-                "deleted_id": tag_id,
-                "kind": kind,
-                "name": name,
-                "affected_trades": affected_count,
-            }
-
+        affected = [
+            int(r["ticket"])
+            for r in self._conn.execute(
+                "SELECT ticket FROM trade_note_tags WHERE tag_id = ?", (tag_id,)
+            ).fetchall()
+        ]
         self._conn.execute("DELETE FROM review_tags WHERE id = ?", (tag_id,))
+        self._sync_tag_text_for_tickets(kind, affected)
         return {
             "deleted_id": tag_id,
             "kind": kind,
             "name": name,
-            "affected_trades": affected_count,
+            "affected_trades": len(affected),
         }
 
 
@@ -572,15 +553,21 @@ class CandleRepository:
 
     def get_by_ticket(self, ticket: int) -> dict[str, list[dict[str, Any]]]:
         rows = self._conn.execute(
-            "SELECT timeframe, candles_json FROM trade_candles WHERE ticket = ?",
+            "SELECT timeframe, candles_json, candles_blob FROM trade_candles WHERE ticket = ?",
             (ticket,),
         ).fetchall()
         out: dict[str, list[dict[str, Any]]] = {}
         for r in rows:
+            tf = str(r["timeframe"])
             try:
-                out[str(r["timeframe"])] = json.loads(r["candles_json"])
+                blob = r["candles_blob"]
+                if blob:
+                    raw = zlib.decompress(bytes(blob)).decode("utf-8")
+                    out[tf] = json.loads(raw)
+                else:
+                    out[tf] = json.loads(r["candles_json"])
             except Exception:
-                out[str(r["timeframe"])] = []
+                out[tf] = []
         return out
 
     def upsert(
@@ -591,14 +578,21 @@ class CandleRepository:
         cached_at: int = 0,
     ) -> None:
         ts = cached_at or int(time.time())
-        payload = json.dumps(candles)
+        compressed = zlib.compress(json.dumps(candles).encode("utf-8"), level=6)
         self._conn.execute(
             """
-            INSERT INTO trade_candles (ticket, timeframe, candles_json, cached_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO trade_candles (ticket, timeframe, candles_json, candles_blob, cached_at)
+            VALUES (?, ?, '', ?, ?)
             ON CONFLICT(ticket, timeframe) DO UPDATE SET
-                candles_json=excluded.candles_json,
+                candles_json='',
+                candles_blob=excluded.candles_blob,
                 cached_at=excluded.cached_at
             """,
-            (ticket, timeframe, payload, ts),
+            (ticket, timeframe, compressed, ts),
         )
+
+    def evict_older_than(self, cutoff_ts: int) -> int:
+        cur = self._conn.execute(
+            "DELETE FROM trade_candles WHERE cached_at < ?", (cutoff_ts,)
+        )
+        return cur.rowcount

@@ -4,7 +4,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 
-LATEST_SCHEMA_VERSION = 3
+LATEST_SCHEMA_VERSION = 4
 
 VALID_TAG_KINDS = frozenset({"setup", "exit", "mistake"})
 VALID_MISTAKE_CATEGORIES = frozenset({"entry", "exit_mgmt"})
@@ -276,10 +276,20 @@ def _migrate_v3(cursor: sqlite3.Cursor) -> None:
         ticket = int(row["ticket"])
         setup_val = (row["setup_tag"] or "").strip()
         if setup_val:
-            register_tag_cursor(cursor, "setup", setup_val, "", is_default=0)
+            setup_id = register_tag_cursor(cursor, "setup", setup_val, "", is_default=0)
+            if setup_id is not None:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO trade_note_tags (ticket, tag_id) VALUES (?, ?)",
+                    (ticket, setup_id),
+                )
         exit_val = (row["exit_tag"] or "").strip()
         if exit_val:
-            register_tag_cursor(cursor, "exit", exit_val, "", is_default=0)
+            exit_id = register_tag_cursor(cursor, "exit", exit_val, "", is_default=0)
+            if exit_id is not None:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO trade_note_tags (ticket, tag_id) VALUES (?, ?)",
+                    (ticket, exit_id),
+                )
         for m_val in parse_tag_list(row["mistake_tag"]):
             tag_id = register_tag_cursor(cursor, "mistake", m_val, "entry", is_default=0)
             if tag_id is not None:
@@ -289,10 +299,110 @@ def _migrate_v3(cursor: sqlite3.Cursor) -> None:
                 )
 
 
+def _migrate_v4(cursor: sqlite3.Cursor) -> None:
+    """Account-scoped deals PK, full setup/exit tag normalization, and trade_candles compression/TTL."""
+    # 1. Rebuild deals with PRIMARY KEY (account_id, ticket)
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS deals_new (
+            ticket INTEGER NOT NULL,
+            order_id INTEGER,
+            account_id INTEGER NOT NULL,
+            time INTEGER,
+            time_msc INTEGER,
+            type INTEGER,
+            entry INTEGER,
+            symbol TEXT,
+            volume REAL,
+            price REAL,
+            profit REAL,
+            swap REAL,
+            commission REAL,
+            sl REAL,
+            tp REAL,
+            open_time INTEGER,
+            open_price REAL,
+            comment TEXT,
+            magic INTEGER DEFAULT 0,
+            risk_r REAL,
+            r_multiple REAL,
+            mae_price REAL DEFAULT 0.0,
+            mfe_price REAL DEFAULT 0.0,
+            mae_pips REAL DEFAULT 0.0,
+            mfe_pips REAL DEFAULT 0.0,
+            mae_amount REAL DEFAULT 0.0,
+            mfe_amount REAL DEFAULT 0.0,
+            mae_r REAL DEFAULT 0.0,
+            mfe_r REAL DEFAULT 0.0,
+            PRIMARY KEY (account_id, ticket),
+            FOREIGN KEY(account_id) REFERENCES accounts(login)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO deals_new (
+            ticket, order_id, account_id, time, time_msc, type, entry, symbol,
+            volume, price, profit, swap, commission, sl, tp, open_time, open_price,
+            comment, magic, risk_r, r_multiple,
+            mae_price, mfe_price, mae_pips, mfe_pips, mae_amount, mfe_amount, mae_r, mfe_r
+        )
+        SELECT
+            ticket, order_id, COALESCE(account_id, 0), time, time_msc, type, entry, symbol,
+            volume, price, profit, swap, commission, sl, tp, open_time, open_price,
+            comment, magic, risk_r, r_multiple,
+            mae_price, mfe_price, mae_pips, mfe_pips, mae_amount, mfe_amount, mae_r, mfe_r
+        FROM deals
+        """
+    )
+    cursor.execute("DROP TABLE deals")
+    cursor.execute("ALTER TABLE deals_new RENAME TO deals")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_acc_time ON deals(account_id, time)")
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_deals_acc_entry_time ON deals(account_id, entry, time)"
+    )
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_symbol ON deals(account_id, symbol)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_deals_ticket ON deals(ticket)")
+
+    # 2. Backfill setup & exit tags from trade_notes into trade_note_tags
+    rows = cursor.execute(
+        "SELECT ticket, setup_tag, exit_tag FROM trade_notes"
+    ).fetchall()
+    for row in rows:
+        ticket = int(row["ticket"])
+        setup_val = (row["setup_tag"] or "").strip()
+        if setup_val:
+            setup_id = register_tag_cursor(cursor, "setup", setup_val, "", is_default=0)
+            if setup_id is not None:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO trade_note_tags (ticket, tag_id) VALUES (?, ?)",
+                    (ticket, setup_id),
+                )
+        exit_val = (row["exit_tag"] or "").strip()
+        if exit_val:
+            exit_id = register_tag_cursor(cursor, "exit", exit_val, "", is_default=0)
+            if exit_id is not None:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO trade_note_tags (ticket, tag_id) VALUES (?, ?)",
+                    (ticket, exit_id),
+                )
+
+    # 3. Add candles_blob column & cached_at index to trade_candles
+    candle_cols = {
+        row[1] for row in cursor.execute("PRAGMA table_info(trade_candles)").fetchall()
+    }
+    if "candles_blob" not in candle_cols:
+        cursor.execute("ALTER TABLE trade_candles ADD COLUMN candles_blob BLOB")
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trade_candles_cached_at ON trade_candles(cached_at)"
+    )
+
+
 _MIGRATIONS: tuple[tuple[int, Callable[[sqlite3.Cursor], None]], ...] = (
     (1, _migrate_v1),
     (2, _migrate_v2),
     (3, _migrate_v3),
+    (4, _migrate_v4),
 )
 
 
