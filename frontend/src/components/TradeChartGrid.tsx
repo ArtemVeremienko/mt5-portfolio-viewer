@@ -502,18 +502,30 @@ export const TradeChartGrid: Component<TradeChartGridProps> = (props) => {
               </div>
             }
           >
-            <div class="flex-1 min-h-0 flex flex-col gap-2.5">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 shrink-0">
-                <CandlePane title="H1" tfSeconds={3600} bars={d().h1} trade={props.trade} heightClass="h-[210px]" />
-                <CandlePane title="M5" tfSeconds={300} bars={d().m5} trade={props.trade} heightClass="h-[210px]" />
-              </div>
+            <div class="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-3 md:grid-rows-3 gap-2.5">
+              <CandlePane
+                title="H1"
+                tfSeconds={3600}
+                bars={d().h1}
+                trade={props.trade}
+                heightClass="flex-1 min-h-[175px]"
+                spanClass="md:col-span-1 md:row-span-1 min-h-0"
+              />
+              <CandlePane
+                title="M5"
+                tfSeconds={300}
+                bars={d().m5}
+                trade={props.trade}
+                heightClass="flex-1 min-h-[175px]"
+                spanClass="md:col-span-2 md:row-span-1 min-h-0"
+              />
               <CandlePane
                 title="M1"
                 tfSeconds={60}
                 bars={d().m1}
                 trade={props.trade}
                 heightClass="flex-1 min-h-[280px]"
-                spanClass="flex-1 min-h-0"
+                spanClass="md:col-span-3 md:row-span-2 min-h-0"
               />
             </div>
           </Show>

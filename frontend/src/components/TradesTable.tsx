@@ -1418,7 +1418,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
         {(t) => (
           <Portal>
             <div class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-              <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-6xl max-h-[92vh] overflow-y-auto shadow-2xl space-y-4">
+              <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-7xl max-h-[92vh] overflow-y-auto shadow-2xl space-y-4">
               <div class="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div>
                   <h4 class="text-sm font-bold text-white">Trade Review &amp; Journal — #{t().ticket}</h4>
@@ -1431,10 +1431,10 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                 </button>
               </div>
               <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-                <div class="lg:col-span-7 flex flex-col">
+                <div class="lg:col-span-8 flex flex-col">
                   <TradeChartGrid trade={t()} />
                 </div>
-                <div class="lg:col-span-5 space-y-3 text-xs">
+                <div class="lg:col-span-4 space-y-3 text-xs">
                 <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-2.5">
                   <div class="flex items-center justify-between">
                     <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Trade Grading</span>
