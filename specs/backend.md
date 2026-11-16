@@ -44,6 +44,8 @@ backend/
 
 ## 3. Data Model & SQLite Schema
 
+> Full ER diagram, table/index breakdown, migration history (`v1`–`v4`), and SQLite vs. PostgreSQL/MongoDB rationale: [specs/database.md](./database.md).
+
 Stored locally in `data/portfolio.db` using `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON`, `PRAGMA busy_timeout=5000`, and versioned migrations tracked via `PRAGMA user_version` (currently **v4**):
 
 ### `accounts` Table
