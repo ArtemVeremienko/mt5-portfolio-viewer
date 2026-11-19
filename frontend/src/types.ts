@@ -367,6 +367,8 @@ export interface ExcursionStats {
   avg_mfe_pips: number;
   avg_mfe_amount: number;
   avg_mfe_r: number;
+  edge_ratio?: number;
+  median_edge_ratio?: number;
   trades: ExcursionTrade[];
 }
 
@@ -419,4 +421,91 @@ export interface PortfolioData {
   available_comments?: string[];
   available_magics?: number[];
   closed_trades: TradeDeal[];
+}
+
+export type BenchmarkMode = 'coin_flip_direction' | 'window_jitter';
+export type BenchmarkFallbackMode = 'realized_1r' | 'atr' | 'fixed_rr';
+export type BenchmarkBarTf = 'm1' | 'm5' | 'h1';
+
+export interface BenchmarkRequest {
+  login?: number | null;
+  all_accounts?: boolean;
+  timeframe?: string;
+  symbol?: string;
+  direction?: string;
+  comment?: string;
+  magic?: number | null;
+  scope?: TradeScope;
+  risk_pct?: number;
+  horizon_bars: number;
+  bar_tf: BenchmarkBarTf;
+  iterations: number;
+  mode: BenchmarkMode;
+  include_costs: boolean;
+  fallback_mode: BenchmarkFallbackMode;
+  atr_mult: number;
+  fixed_rr: number;
+  seed?: number | null;
+}
+
+export interface BenchmarkHistogramBin {
+  bin_start: number;
+  bin_end: number;
+  count: number;
+}
+
+export interface BenchmarkTwrPoint {
+  f_pct: number;
+  twr: number;
+}
+
+export interface BenchmarkResponse {
+  eligible_trades: number;
+  total_trades: number;
+  iterations: number;
+  horizon_bars: number;
+  timeframe: BenchmarkBarTf;
+  mode: BenchmarkMode;
+  include_costs: boolean;
+  sample_size_warning: boolean;
+  actual: {
+    win_rate: number;
+    net_r: number;
+    expectancy_r: number;
+    in_trade_edge_ratio: number;
+    horizon_edge_ratio: number;
+    horizon_avg_mfe_r: number;
+    horizon_avg_mae_r: number;
+    avg_rr: number;
+    breakeven_win_rate: number;
+  };
+  random_baseline: {
+    win_rate_p5: number;
+    win_rate_p50: number;
+    win_rate_p95: number;
+    net_r_p5: number;
+    net_r_p50: number;
+    net_r_p95: number;
+    edge_ratio_p50: number;
+    edge_ratio_p95: number;
+  };
+  percentiles: {
+    win_rate_pct: number;
+    net_r_pct: number;
+    edge_ratio_pct: number;
+    p_value_net_r: number;
+  };
+  sizing: {
+    full_kelly_pct: number;
+    half_kelly_pct: number;
+    quarter_kelly_pct: number;
+    optimal_f_pct: number;
+    optimal_f_risk_pct: number;
+    quarter_optimal_f_risk_pct: number;
+    current_risk_pct: number;
+    max_twr: number;
+    twr_curve: BenchmarkTwrPoint[];
+  };
+  histogram: BenchmarkHistogramBin[];
+  verdict: 'significant_edge' | 'inconclusive' | 'no_edge' | 'no_candle_data';
 }

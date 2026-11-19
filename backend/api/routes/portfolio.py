@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
+from pydantic import BaseModel, Field
 
 from backend.analytics import process_portfolio_analytics
 from backend.api.deps import get_db_path, get_mt5_gateway
 from backend.domain.protocols import TradingGateway
 from backend.infrastructure.db.uow import SqliteUnitOfWork
+from backend.services.analytics.benchmark import BarTimeframe, FallbackMode, SimulationMode
+from backend.services.benchmark_service import execute_strategy_benchmark
 from backend.services.sync_service import build_combined_account, perform_sync
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
@@ -123,3 +127,58 @@ def get_portfolio(
         "mt5_connected": gateway.is_connected(),
         **analytics,
     }
+
+
+class BenchmarkRequest(BaseModel):
+    login: int | None = None
+    all_accounts: bool = False
+    timeframe: str = "all"
+    symbol: str | None = None
+    direction: str | None = None
+    comment: str | None = None
+    magic: int | None = None
+    scope: str = "all"
+    risk_pct: float | None = Field(default=None, gt=0.0, le=1.0)
+    horizon_bars: int = Field(default=30, ge=1, le=200)
+    bar_tf: BarTimeframe = "m5"
+    iterations: int = Field(default=1000, ge=100, le=5000)
+    mode: SimulationMode = "coin_flip_direction"
+    include_costs: bool = True
+    fallback_mode: FallbackMode = "realized_1r"
+    atr_mult: float = Field(default=1.5, ge=0.25, le=10.0)
+    fixed_rr: float = Field(default=2.0, ge=0.25, le=20.0)
+    seed: int | None = 42
+
+
+@router.post("/portfolio/benchmark")
+async def run_portfolio_benchmark(
+    payload: BenchmarkRequest,
+    request: Request,
+    db_path: Annotated[Path, Depends(get_db_path)],
+    gateway: Annotated[TradingGateway, Depends(get_mt5_gateway)],
+) -> dict[str, Any]:
+    active_login = getattr(request.app.state, "active_login", None)
+    return await asyncio.to_thread(
+        execute_strategy_benchmark,
+        db_path,
+        gateway,
+        active_login=active_login,
+        login=payload.login,
+        all_accounts=payload.all_accounts,
+        timeframe=payload.timeframe,
+        symbol=payload.symbol,
+        direction=payload.direction,
+        comment=payload.comment,
+        magic=payload.magic,
+        scope=payload.scope,
+        risk_pct=payload.risk_pct,
+        horizon_bars=payload.horizon_bars,
+        bar_tf=payload.bar_tf,
+        iterations=payload.iterations,
+        mode=payload.mode,
+        include_costs=payload.include_costs,
+        fallback_mode=payload.fallback_mode,
+        atr_mult=payload.atr_mult,
+        fixed_rr=payload.fixed_rr,
+        seed=payload.seed,
+    )

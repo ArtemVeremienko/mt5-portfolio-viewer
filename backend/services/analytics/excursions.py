@@ -55,6 +55,14 @@ def compute_excursion_stats(
     all_mfe_amt = [t["mfe_amount"] for t in trade_deals if t.get("mfe_amount") is not None]
     all_mfe_r = [t["mfe_r"] for t in trade_deals if t.get("mfe_r") is not None]
 
+    avg_mae_r_val = float(np.mean(all_mae_r)) if all_mae_r else 0.0
+    avg_mfe_r_val = float(np.mean(all_mfe_r)) if all_mfe_r else 0.0
+    edge_ratio = round(avg_mfe_r_val / avg_mae_r_val, 2) if avg_mae_r_val > 0 else 0.0
+
+    med_mae_r = float(np.median(all_mae_r)) if all_mae_r else 0.0
+    med_mfe_r = float(np.median(all_mfe_r)) if all_mfe_r else 0.0
+    median_edge_ratio = round(med_mfe_r / med_mae_r, 2) if med_mae_r > 0 else 0.0
+
     return {
         "optimal_sl_pips": round(float(np.percentile(winning_mae_pips, 90)), 1)
         if winning_mae_pips
@@ -97,10 +105,12 @@ def compute_excursion_stats(
         else 0.0,
         "avg_mae_pips": round(float(np.mean(all_mae_pips)), 1) if all_mae_pips else 0.0,
         "avg_mae_amount": round(float(np.mean(all_mae_amt)), 2) if all_mae_amt else 0.0,
-        "avg_mae_r": round(float(np.mean(all_mae_r)), 2) if all_mae_r else 0.0,
+        "avg_mae_r": round(avg_mae_r_val, 2),
         "avg_mfe_pips": round(float(np.mean(all_mfe_pips)), 1) if all_mfe_pips else 0.0,
         "avg_mfe_amount": round(float(np.mean(all_mfe_amt)), 2) if all_mfe_amt else 0.0,
-        "avg_mfe_r": round(float(np.mean(all_mfe_r)), 2) if all_mfe_r else 0.0,
+        "avg_mfe_r": round(avg_mfe_r_val, 2),
+        "edge_ratio": edge_ratio,
+        "median_edge_ratio": median_edge_ratio,
         "trades": [
             {
                 "ticket": t.get("ticket"),

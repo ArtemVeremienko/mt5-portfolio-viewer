@@ -22,6 +22,7 @@ import { MonthlyHeatmap } from './components/MonthlyHeatmap';
 import { TradingStats } from './components/TradingStats';
 import { TradesTable } from './components/TradesTable';
 import { ExcursionPanel } from './components/ExcursionPanel';
+import { BenchmarkPanel } from './components/BenchmarkPanel';
 import { CalendarView } from './components/CalendarView';
 import { AdvancedStats } from './components/AdvancedStats';
 import { MonthlyAnalytics } from './components/MonthlyAnalytics';
@@ -34,6 +35,7 @@ import {
   Calendar as CalendarIcon,
   BarChart3,
   CalendarDays,
+  Dices,
   Filter,
 } from 'lucide-solid';
 
@@ -63,7 +65,7 @@ export const App: Component = () => {
   const [isWsConnected, setIsWsConnected] = createSignal<boolean>(false);
   const [isSyncing, setIsSyncing] = createSignal<boolean>(false);
   const [mainTab, setMainTab] = createSignal<
-    'overview' | 'advanced' | 'excursions' | 'calendar' | 'trades'
+    'overview' | 'advanced' | 'excursions' | 'benchmark' | 'calendar' | 'trades'
   >('overview');
   const [calendarSubTab, setCalendarSubTab] = createSignal<'daily' | 'monthly'>('daily');
   const [showFilters, setShowFilters] = createSignal<boolean>(false);
@@ -268,6 +270,18 @@ export const App: Component = () => {
 
           <button
             class={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              mainTab() === 'benchmark'
+                ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-600/30'
+                : 'text-amber-400 hover:text-amber-200 hover:bg-amber-950/30'
+            }`}
+            onClick={() => setMainTab('benchmark')}
+          >
+            <Dices size={15} />
+            <span>Benchmark</span>
+          </button>
+
+          <button
+            class={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
               mainTab() === 'calendar'
                 ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30'
                 : 'text-emerald-400 hover:text-emerald-200 hover:bg-emerald-950/30'
@@ -386,6 +400,18 @@ export const App: Component = () => {
           <ExcursionPanel
             excursionStats={portfolioData()?.excursion_stats || null}
             mode={metricMode()}
+          />
+        </Show>
+
+        <Show when={mainTab() === 'benchmark'}>
+          <BenchmarkPanel
+            excursionStats={portfolioData()?.excursion_stats || null}
+            allAccounts={allAccountsMode()}
+            symbol={filterSymbol()}
+            direction={filterDirection()}
+            comment={filterComment()}
+            magic={filterMagic()}
+            scope={tradeScope()}
           />
         </Show>
 

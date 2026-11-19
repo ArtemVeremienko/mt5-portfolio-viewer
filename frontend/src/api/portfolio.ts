@@ -1,5 +1,12 @@
 import { fetchJson } from './client';
-import type { AccountInfo, OpenPosition, PortfolioData, TradeScope } from '../types';
+import type {
+  AccountInfo,
+  BenchmarkRequest,
+  BenchmarkResponse,
+  OpenPosition,
+  PortfolioData,
+  TradeScope,
+} from '../types';
 
 export interface AccountsResponse {
   accounts: AccountInfo[];
@@ -45,4 +52,12 @@ export function getPortfolio(params: PortfolioQueryParams): Promise<PortfolioDat
 
 export function getOpenTrades(): Promise<{ positions: OpenPosition[] }> {
   return fetchJson<{ positions: OpenPosition[] }>('/api/trades/open');
+}
+
+export function runStrategyBenchmark(params: BenchmarkRequest): Promise<BenchmarkResponse> {
+  return fetchJson<BenchmarkResponse>('/api/portfolio/benchmark', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
 }
