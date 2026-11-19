@@ -113,6 +113,46 @@ def execute_strategy_benchmark(
                     "m1": fetched.get("m1", []),
                 }
 
+    symbol_candles_by_symbol: dict[str, list[dict[str, Any]]] = {}
+    if mode == "random_session" and closed_trades:
+        sym_ranges: dict[str, tuple[int, int]] = {}
+        for t in closed_trades:
+            sym = str(t.get("symbol") or "")
+            if not sym:
+                continue
+            o_ts = int(t.get("open_time") or t.get("time") or 0)
+            c_ts = int(t.get("time") or o_ts)
+            if o_ts <= 0:
+                continue
+            cur = sym_ranges.get(sym)
+            if cur is None:
+                sym_ranges[sym] = (o_ts, c_ts)
+            else:
+                sym_ranges[sym] = (min(cur[0], o_ts), max(cur[1], c_ts))
+
+        for sym, (min_o, max_c) in sym_ranges.items():
+            req_from = max(1, min_o - 7 * 86400)
+            req_to = max_c + 86400
+            with SqliteUnitOfWork(db_path) as uow:
+                cached_sym = uow.symbol_candles.get(sym, bar_tf)
+            if (
+                cached_sym
+                and cached_sym["candles"]
+                and cached_sym["from_ts"] <= min_o
+                and cached_sym["to_ts"] >= max_c
+            ):
+                symbol_candles_by_symbol[sym] = cached_sym["candles"]
+            else:
+                fetched_sym = gateway.get_symbol_candles_range(sym, bar_tf, req_from, req_to)
+                if fetched_sym:
+                    with SqliteUnitOfWork(db_path) as uow:
+                        uow.symbol_candles.upsert(
+                            sym, bar_tf, req_from, req_to, fetched_sym, cached_at=int(time.time())
+                        )
+                    symbol_candles_by_symbol[sym] = fetched_sym
+                elif cached_sym and cached_sym["candles"]:
+                    symbol_candles_by_symbol[sym] = cached_sym["candles"]
+
     return run_coin_flip_monte_carlo(
         trades=closed_trades,
         candles_by_ticket=candles_by_ticket,
@@ -126,4 +166,5 @@ def execute_strategy_benchmark(
         fixed_rr=fixed_rr,
         current_risk_pct=round(effective_risk_pct * 100.0, 2),
         seed=seed,
+        symbol_candles_by_symbol=symbol_candles_by_symbol,
     )

@@ -423,7 +423,7 @@ export interface PortfolioData {
   closed_trades: TradeDeal[];
 }
 
-export type BenchmarkMode = 'coin_flip_direction' | 'window_jitter';
+export type BenchmarkMode = 'coin_flip_direction' | 'window_jitter' | 'random_session';
 export type BenchmarkFallbackMode = 'realized_1r' | 'atr' | 'fixed_rr';
 export type BenchmarkBarTf = 'm1' | 'm5' | 'h1';
 

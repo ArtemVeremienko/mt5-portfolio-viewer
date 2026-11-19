@@ -464,6 +464,46 @@ class LiveMT5Gateway:
 
         return result
 
+    def get_symbol_candles_range(
+        self,
+        symbol: str,
+        timeframe: str,
+        from_ts: int,
+        to_ts: int,
+    ) -> list[dict[str, Any]]:
+        """Fetch continuous OHLC bars for a symbol over [from_ts, to_ts]."""
+        if not symbol or from_ts <= 0 or to_ts <= from_ts or not self.is_connected():
+            return []
+        tf_map = {
+            "h1": mt5.TIMEFRAME_H1,
+            "m5": mt5.TIMEFRAME_M5,
+            "m1": mt5.TIMEFRAME_M1,
+        }
+        tf = tf_map.get(timeframe.lower())
+        if tf is None:
+            return []
+        with contextlib.suppress(Exception):
+            mt5.symbol_select(symbol, True)
+        try:
+            from_dt = datetime.fromtimestamp(int(from_ts), tz=UTC)
+            to_dt = datetime.fromtimestamp(int(to_ts), tz=UTC)
+            rates = mt5.copy_rates_range(symbol, tf, from_dt, to_dt)
+            if rates is None:
+                return []
+            return [
+                {
+                    "time": int(r["time"]),
+                    "open": float(r["open"]),
+                    "high": float(r["high"]),
+                    "low": float(r["low"]),
+                    "close": float(r["close"]),
+                }
+                for r in rates
+            ]
+        except Exception as exc:
+            logger.warning("Error fetching range %s %s: %s", symbol, timeframe.upper(), exc)
+            return []
+
 
 def _recover_sl_tp(pos_orders: list[Any], deal_comment: str) -> tuple[float, float]:
     sl_val = 0.0

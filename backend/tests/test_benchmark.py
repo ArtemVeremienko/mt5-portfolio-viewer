@@ -246,3 +246,26 @@ def test_benchmark_route_integration(tmp_path: Path) -> None:
         assert "sizing" in data
         assert "histogram" in data
         assert sqlite3.connect(db_path).execute("SELECT COUNT(*) FROM deals").fetchone()[0] > 0
+
+        # Phase 2: random_session mode with symbol_candles cache
+        resp_session = client.post(
+            "/api/portfolio/benchmark",
+            json={
+                "horizon_bars": 20,
+                "bar_tf": "m5",
+                "iterations": 120,
+                "mode": "random_session",
+                "include_costs": True,
+                "fallback_mode": "realized_1r",
+                "seed": 42,
+            },
+        )
+        assert resp_session.status_code == 200
+        sess_data = resp_session.json()
+        assert sess_data["mode"] == "random_session"
+        assert sess_data["eligible_trades"] >= 5
+        assert len(sess_data["histogram"]) > 0
+        with SqliteUnitOfWork(db_path) as uow:
+            cached = uow.symbol_candles.get("EURUSD", "m5")
+            assert cached is not None
+            assert len(cached["candles"]) > 0

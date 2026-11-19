@@ -4,7 +4,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 
-LATEST_SCHEMA_VERSION = 4
+LATEST_SCHEMA_VERSION = 5
 
 VALID_TAG_KINDS = frozenset({"setup", "exit", "mistake"})
 VALID_MISTAKE_CATEGORIES = frozenset({"entry", "exit_mgmt"})
@@ -398,11 +398,29 @@ def _migrate_v4(cursor: sqlite3.Cursor) -> None:
     )
 
 
+def _migrate_v5(cursor: sqlite3.Cursor) -> None:
+    """Create symbol_candles table for broad historical OHLC caching."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS symbol_candles (
+            symbol TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            from_ts INTEGER NOT NULL,
+            to_ts INTEGER NOT NULL,
+            candles_blob BLOB NOT NULL,
+            cached_at INTEGER NOT NULL,
+            PRIMARY KEY (symbol, timeframe)
+        )
+        """
+    )
+
+
 _MIGRATIONS: tuple[tuple[int, Callable[[sqlite3.Cursor], None]], ...] = (
     (1, _migrate_v1),
     (2, _migrate_v2),
     (3, _migrate_v3),
     (4, _migrate_v4),
+    (5, _migrate_v5),
 )
 
 

@@ -1,13 +1,16 @@
 import {
   type Component,
+  createEffect,
   createMemo,
   createSignal,
   For,
   Match,
+  on,
   onMount,
   Show,
   Switch,
 } from 'solid-js';
+import { formatOrdinal } from '../utils/formatters';
 import {
   Activity,
   AlertTriangle,
@@ -52,8 +55,10 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
   const [isRunning, setIsRunning] = createSignal<boolean>(false);
   const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
   const [result, setResult] = createSignal<BenchmarkResponse | null>(null);
+  let latestRunId = 0;
 
   const executeSimulation = async () => {
+    const runId = ++latestRunId;
     setIsRunning(true);
     setErrorMsg(null);
     try {
@@ -74,17 +79,40 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
         fixed_rr: fixedRr(),
         seed: 42,
       });
-      setResult(res);
+      if (runId === latestRunId) {
+        setResult(res);
+      }
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'Failed to run benchmark simulation.');
+      if (runId === latestRunId) {
+        setErrorMsg(e instanceof Error ? e.message : 'Failed to run benchmark simulation.');
+      }
     } finally {
-      setIsRunning(false);
+      if (runId === latestRunId) {
+        setIsRunning(false);
+      }
     }
   };
 
   onMount(() => {
     void executeSimulation();
   });
+
+  createEffect(
+    on(
+      [
+        () => props.allAccounts,
+        () => props.symbol,
+        () => props.direction,
+        () => props.comment,
+        () => props.magic,
+        () => props.scope,
+      ],
+      () => {
+        void executeSimulation();
+      },
+      { defer: true },
+    ),
+  );
 
   const maxHistCount = createMemo(() => {
     const bins = result()?.histogram || [];
@@ -190,6 +218,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
             >
               <option value="coin_flip_direction">50/50 Direction</option>
               <option value="window_jitter">Window Jitter + Dir</option>
+              <option value="random_session">Random Session Bars</option>
             </select>
           </label>
 
@@ -309,7 +338,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                       Indistinguishable from Coin-Flip Baseline (p = {res().percentiles.p_value_net_r.toFixed(3)})
                     </div>
                     <div class="text-rose-200/80 mt-0.5">
-                      Your entries rank at the {res().percentiles.net_r_pct}th percentile of random runs. Current results may be driven by market drift or R:R mechanics rather than entry timing.
+                      Your entries rank at the {formatOrdinal(res().percentiles.net_r_pct)} percentile of random runs. Current results may be driven by market drift or R:R mechanics rather than entry timing.
                     </div>
                   </div>
                 </div>
@@ -360,7 +389,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                       {res().actual.win_rate.toFixed(1)}%
                     </div>
                     <div class="text-[11px] text-slate-400">
-                      {res().percentiles.win_rate_pct.toFixed(1)}th pct vs. random
+                      {formatOrdinal(res().percentiles.win_rate_pct)} pct vs. random
                     </div>
                   </div>
                   <div class="text-right">
@@ -400,7 +429,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   </div>
                   <div class="text-right">
                     <div class="text-sm font-bold text-slate-300">
-                      {res().percentiles.net_r_pct.toFixed(1)}th
+                      {formatOrdinal(res().percentiles.net_r_pct)}
                     </div>
                     <div class="text-[11px] text-slate-500">Percentile</div>
                   </div>
@@ -446,7 +475,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                         return (
                           <div
                             class="flex-1 h-full flex flex-col justify-end items-center group relative"
-                            title={`[${bin.bin_start.toFixed(1)}R, ${bin.bin_end.toFixed(1)}R]: ${bin.count} runs`}
+                            title={`[${bin.bin_start.toFixed(1)}R, ${bin.bin_end.toFixed(1)}R]: ${bin.count} ${bin.count === 1 ? 'run' : 'runs'}`}
                           >
                             <div
                               style={{ height: `${heightPct}%` }}

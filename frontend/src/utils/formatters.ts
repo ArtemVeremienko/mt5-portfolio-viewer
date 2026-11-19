@@ -29,3 +29,19 @@ export function formatDuration(seconds: number): string {
   const remHr = hours % 24;
   return remHr > 0 ? `${days}d ${remHr}h` : `${days}d`;
 }
+
+export function formatOrdinal(value: number): string {
+  const n = Math.round(value);
+  const mod100 = Math.abs(n) % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (Math.abs(n) % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}

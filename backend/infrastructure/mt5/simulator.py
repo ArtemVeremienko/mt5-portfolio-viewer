@@ -251,3 +251,44 @@ class SimulatedMT5Gateway:
         timeframes: list[str] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         return {"h1": [], "m5": [], "m1": []}
+
+    def get_symbol_candles_range(
+        self,
+        symbol: str,
+        timeframe: str,
+        from_ts: int,
+        to_ts: int,
+    ) -> list[dict[str, Any]]:
+        """Generate deterministic synthetic OHLC bars for offline simulation/testing."""
+        if not symbol or from_ts <= 0 or to_ts <= from_ts:
+            return []
+        step_map = {"h1": 3600, "m5": 300, "m1": 60}
+        step = step_map.get(timeframe.lower(), 300)
+        max_bars = 5000
+        total_steps = min(max_bars, max(1, (to_ts - from_ts) // step))
+        base = 2650.0 if "XAU" in symbol.upper() else (150.0 if "JPY" in symbol.upper() else 1.0900)
+        vol = 2.5 if "XAU" in symbol.upper() else (0.12 if "JPY" in symbol.upper() else 0.0005)
+
+        rng = random.Random(f"{self._seed}:{symbol}:{timeframe}:{from_ts}")
+        bars: list[dict[str, Any]] = []
+        price = base
+        for i in range(total_steps):
+            ts = from_ts + i * step
+            delta = rng.gauss(0.0, vol)
+            o = price
+            c = max(1e-5, o + delta)
+            wick_up = abs(rng.gauss(0.0, vol * 0.6))
+            wick_dn = abs(rng.gauss(0.0, vol * 0.6))
+            h = max(o, c) + wick_up
+            low_p = max(1e-5, min(o, c) - wick_dn)
+            bars.append(
+                {
+                    "time": ts,
+                    "open": round(o, 5),
+                    "high": round(h, 5),
+                    "low": round(low_p, 5),
+                    "close": round(c, 5),
+                }
+            )
+            price = c
+        return bars

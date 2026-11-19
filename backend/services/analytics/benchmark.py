@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import bisect
 import math
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import numpy as np
 
-SimulationMode = Literal["coin_flip_direction", "window_jitter"]
+SimulationMode = Literal["coin_flip_direction", "window_jitter", "random_session"]
 FallbackMode = Literal["realized_1r", "atr", "fixed_rr"]
 BarTimeframe = Literal["m1", "m5", "h1"]
 
@@ -298,16 +299,21 @@ def run_coin_flip_monte_carlo(
     fixed_rr: float = 2.0,
     current_risk_pct: float = 1.0,
     seed: int | None = 42,
+    symbol_candles_by_symbol: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """Run Monte Carlo coin-flip entry benchmark on historical OHLC bars."""
     r_all = [float(t.get("r_multiple") or 0.0) for t in trades]
     sizing = compute_kelly_and_optimal_f(r_all, current_risk_pct=current_risk_pct)
+    sym_bars_map = symbol_candles_by_symbol or {}
 
     # Precompute eligible trade contexts with cached bars
     contexts: list[dict[str, Any]] = []
     for t in trades:
         ticket = int(t.get("ticket") or 0)
+        sym = str(t.get("symbol") or "")
         bars = (candles_by_ticket.get(ticket) or {}).get(timeframe) or []
+        if len(bars) < 3 and mode == "random_session":
+            bars = sym_bars_map.get(sym, [])
         if len(bars) < 3:
             continue
 
@@ -323,6 +329,8 @@ def run_coin_flip_monte_carlo(
         contexts.append(
             {
                 "trade": t,
+                "symbol": sym,
+                "open_ts": open_ts,
                 "bars": bars,
                 "entry_idx": entry_idx,
                 "sl_dist": sl_dist,
@@ -438,6 +446,62 @@ def run_coin_flip_monte_carlo(
         mean_mfe = np.mean(sampled_mfe, axis=1)
         mean_mae = np.mean(sampled_mae, axis=1)
         sim_eratios = np.where(mean_mae > 1e-9, mean_mfe / mean_mae, 0.0)
+    elif mode == "random_session":
+        active_hours = {
+            datetime.fromtimestamp(c["open_ts"], tz=UTC).hour
+            for c in contexts
+            if c["open_ts"] > 0
+        }
+        sym_candidates: dict[str, list[int]] = {}
+        for sym, sb in sym_bars_map.items():
+            if len(sb) < 3:
+                continue
+            max_start = max(1, len(sb) - max(2, horizon_bars))
+            hour_matched = [
+                idx
+                for idx in range(max_start)
+                if datetime.fromtimestamp(int(sb[idx]["time"]), tz=UTC).hour in active_hours
+            ]
+            sym_candidates[sym] = hour_matched if hour_matched else list(range(max_start))
+
+        for it in range(iterations):
+            run_r = np.empty(n_ctx, dtype=np.float64)
+            run_mfe = np.empty(n_ctx, dtype=np.float64)
+            run_mae = np.empty(n_ctx, dtype=np.float64)
+            dirs = rng.integers(0, 2, size=n_ctx)
+            for idx, ctx in enumerate(contexts):
+                sym = ctx["symbol"]
+                cand_list = sym_candidates.get(sym)
+                if cand_list:
+                    use_bars = sym_bars_map[sym]
+                    rand_idx = cand_list[int(rng.integers(0, len(cand_list)))]
+                else:
+                    use_bars = ctx["bars"]
+                    max_valid = max(0, len(use_bars) - 2)
+                    low_idx = max(0, ctx["entry_idx"] - min(20, ctx["entry_idx"]))
+                    high_idx = min(max_valid, ctx["entry_idx"] + 10)
+                    rand_idx = (
+                        int(rng.integers(low_idx, high_idx + 1))
+                        if high_idx >= low_idx
+                        else ctx["entry_idx"]
+                    )
+                nr, mfe, mae = simulate_bar_outcome(
+                    use_bars,
+                    rand_idx,
+                    int(dirs[idx]),
+                    ctx["sl_dist"],
+                    ctx["tp_dist"],
+                    ctx["max_bars"],
+                    horizon_bars,
+                    ctx["cost_r"],
+                )
+                run_r[idx] = nr
+                run_mfe[idx] = mfe
+                run_mae[idx] = mae
+            sim_win_rates[it] = float(np.mean(run_r > 0.0) * 100.0)
+            sim_net_rs[it] = float(np.sum(run_r))
+            m_mae = float(np.mean(run_mae))
+            sim_eratios[it] = float(np.mean(run_mfe) / m_mae) if m_mae > 1e-9 else 0.0
     else:
         # window_jitter: sample random bar offset around entry_idx and random direction
         for it in range(iterations):

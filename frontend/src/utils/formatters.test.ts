@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { formatCurrency, formatPct, formatR, formatDuration } from './formatters';
+import { formatCurrency, formatPct, formatR, formatDuration, formatOrdinal } from './formatters';
 
 describe('formatters', () => {
   it('formats currency with sign and 2 decimals', () => {
@@ -20,5 +20,17 @@ describe('formatters', () => {
     expect(formatDuration(45)).toBe('45s');
     expect(formatDuration(240)).toBe('4m');
     expect(formatDuration(7260)).toBe('2h 1m');
+  });
+
+  it('formats ordinal numbers properly', () => {
+    expect(formatOrdinal(1)).toBe('1st');
+    expect(formatOrdinal(2)).toBe('2nd');
+    expect(formatOrdinal(3)).toBe('3rd');
+    expect(formatOrdinal(4)).toBe('4th');
+    expect(formatOrdinal(11)).toBe('11th');
+    expect(formatOrdinal(12)).toBe('12th');
+    expect(formatOrdinal(13)).toBe('13th');
+    expect(formatOrdinal(21)).toBe('21st');
+    expect(formatOrdinal(63)).toBe('63rd');
   });
 });

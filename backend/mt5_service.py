@@ -69,5 +69,20 @@ class MT5Service:
             )
         return self._sim.get_trade_mtf_candles(symbol, open_time, close_time, timeframes)
 
+    def get_symbol_candles_range(
+        self,
+        symbol: str,
+        timeframe: str,
+        from_ts: int,
+        to_ts: int,
+    ) -> list[dict[str, Any]]:
+        if self._live.is_connected():
+            return self._live.get_symbol_candles_range(symbol, timeframe, from_ts, to_ts)
+        return (
+            self._sim.get_symbol_candles_range(symbol, timeframe, from_ts, to_ts)
+            if self.use_simulation_if_offline
+            else []
+        )
+
 
 mt5_service = MT5Service()

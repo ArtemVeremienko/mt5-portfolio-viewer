@@ -20,3 +20,10 @@ class TradingGateway(Protocol):
         close_time: int,
         timeframes: list[str] | None = None,
     ) -> dict[str, list[dict[str, Any]]]: ...
+    def get_symbol_candles_range(
+        self,
+        symbol: str,
+        timeframe: str,
+        from_ts: int,
+        to_ts: int,
+    ) -> list[dict[str, Any]]: ...

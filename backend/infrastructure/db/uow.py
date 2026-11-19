@@ -11,6 +11,7 @@ from backend.infrastructure.db.repositories import (
     DealRepository,
     JournalRepository,
     SnapshotRepository,
+    SymbolCandleRepository,
 )
 
 
@@ -26,6 +27,7 @@ class SqliteUnitOfWork:
         self.snapshots: SnapshotRepository
         self.journal: JournalRepository
         self.candles: CandleRepository
+        self.symbol_candles: SymbolCandleRepository
 
     def __enter__(self) -> SqliteUnitOfWork:
         self._conn_cm = get_connection(self._db_path)
@@ -35,6 +37,7 @@ class SqliteUnitOfWork:
         self.snapshots = SnapshotRepository(self.conn)
         self.journal = JournalRepository(self.conn)
         self.candles = CandleRepository(self.conn)
+        self.symbol_candles = SymbolCandleRepository(self.conn)
         return self
 
     def __exit__(

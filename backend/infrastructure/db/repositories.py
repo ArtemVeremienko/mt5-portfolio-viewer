@@ -596,3 +596,55 @@ class CandleRepository:
             "DELETE FROM trade_candles WHERE cached_at < ?", (cutoff_ts,)
         )
         return cur.rowcount
+
+
+class SymbolCandleRepository:
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def get(self, symbol: str, timeframe: str) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            """
+            SELECT from_ts, to_ts, candles_blob, cached_at
+            FROM symbol_candles
+            WHERE symbol = ? AND timeframe = ?
+            """,
+            (symbol, timeframe),
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            raw = zlib.decompress(bytes(row["candles_blob"])).decode("utf-8")
+            candles = json.loads(raw)
+        except Exception:
+            candles = []
+        return {
+            "from_ts": int(row["from_ts"]),
+            "to_ts": int(row["to_ts"]),
+            "candles": candles,
+            "cached_at": int(row["cached_at"]),
+        }
+
+    def upsert(
+        self,
+        symbol: str,
+        timeframe: str,
+        from_ts: int,
+        to_ts: int,
+        candles: list[dict[str, Any]],
+        cached_at: int = 0,
+    ) -> None:
+        ts = cached_at or int(time.time())
+        compressed = zlib.compress(json.dumps(candles).encode("utf-8"), level=6)
+        self._conn.execute(
+            """
+            INSERT INTO symbol_candles (symbol, timeframe, from_ts, to_ts, candles_blob, cached_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(symbol, timeframe) DO UPDATE SET
+                from_ts=excluded.from_ts,
+                to_ts=excluded.to_ts,
+                candles_blob=excluded.candles_blob,
+                cached_at=excluded.cached_at
+            """,
+            (symbol, timeframe, from_ts, to_ts, compressed, ts),
+        )
