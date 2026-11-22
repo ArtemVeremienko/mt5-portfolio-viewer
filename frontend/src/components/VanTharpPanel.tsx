@@ -118,12 +118,39 @@ export const VanTharpPanel: Component<VanTharpPanelProps> = (props) => {
         {/* Card 2: Expectancy (R̄) */}
         <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-lg">
           <div>
-            <span class="text-xs text-slate-400 font-semibold uppercase tracking-wider">R-Expectancy (R̄ per Trade)</span>
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-xs text-slate-400 font-semibold uppercase tracking-wider">R-Expectancy (R̄ per Trade)</span>
+              <Show when={(s()?.total_trades ?? 0) >= 30}>
+                <span
+                  class={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    (s()?.r_expectancy ?? 0) > 0
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                      : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                  }`}
+                >
+                  {(s()?.r_expectancy ?? 0) > 0 ? 'Poker (+EV)' : 'Roulette (E ≤ 0)'}
+                </span>
+              </Show>
+            </div>
             <div class="flex items-baseline gap-2 mt-2">
               <span class={`text-3xl font-black ${ (s()?.r_expectancy ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400' }`}>
                 {s()?.r_expectancy !== undefined ? `${(s()?.r_expectancy ?? 0) > 0 ? '+' : ''}${s()?.r_expectancy.toFixed(3)}R` : '0.00R'}
               </span>
             </div>
+            <Show when={(s()?.total_trades ?? 0) >= 30 && (s()?.total_trades ?? 0) < 100}>
+              <div class="mt-2.5 text-[10px] text-slate-400">
+                <div class="flex justify-between mb-1">
+                  <span>Stabilization Target: {s()?.total_trades ?? 0} / 100</span>
+                  <span class="font-mono text-slate-300">{Math.round(((s()?.total_trades ?? 0) / 100) * 100)}%</span>
+                </div>
+                <div class="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
+                  <div
+                    class="h-full bg-blue-500 rounded-full"
+                    style={{ width: `${Math.min(100, ((s()?.total_trades ?? 0) / 100) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            </Show>
           </div>
           <div class="text-[11px] text-slate-400 mt-3 flex justify-between">
             <span>Avg Win: <strong class="text-emerald-400">+{s()?.avg_win_r?.toFixed(2)}R</strong></span>

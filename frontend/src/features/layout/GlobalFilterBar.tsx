@@ -9,12 +9,15 @@ export interface GlobalFilterBarProps {
   direction: string;
   comment: string;
   magic: string;
+  setupTag: string;
+  excludeMistakes: boolean;
   allAccountsMode: boolean;
   accountsCount: number;
   tradeScope: TradeScope;
   availableSymbols: string[];
   availableComments: string[];
   availableMagics: number[];
+  availableSetupTags: string[];
   hasActiveFilters: boolean;
   onStartDateChange: (val: string) => void;
   onEndDateChange: (val: string) => void;
@@ -22,6 +25,8 @@ export interface GlobalFilterBarProps {
   onDirectionChange: (val: string) => void;
   onCommentChange: (val: string) => void;
   onMagicChange: (val: string) => void;
+  onSetupTagChange: (val: string) => void;
+  onToggleExcludeMistakes: () => void;
   onToggleAllAccounts: () => void;
   onReset: () => void;
 }
@@ -105,6 +110,34 @@ export const GlobalFilterBar: Component<GlobalFilterBarProps> = (props) => {
             </For>
           </select>
         </Show>
+
+        <Show when={props.availableSetupTags.length > 0}>
+          <select
+            id="filter-setup-tag"
+            name="setup_tag"
+            value={props.setupTag}
+            onChange={(e) => props.onSetupTagChange(e.currentTarget.value)}
+            class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 max-w-[140px] focus:outline-none focus:border-blue-500"
+          >
+            <option value="">All Setups</option>
+            <For each={props.availableSetupTags}>
+              {(tag) => <option value={tag}>{tag}</option>}
+            </For>
+          </select>
+        </Show>
+
+        <button
+          type="button"
+          onClick={() => props.onToggleExcludeMistakes()}
+          class={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+            props.excludeMistakes
+              ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40'
+              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+          }`}
+          title="Isolate System Trades by excluding trades tagged with mistakes"
+        >
+          System Only (No Mistakes)
+        </button>
 
         <Show when={props.accountsCount > 1}>
           <button

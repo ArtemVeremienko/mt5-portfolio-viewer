@@ -420,7 +420,59 @@ export interface PortfolioData {
   available_symbols?: string[];
   available_comments?: string[];
   available_magics?: number[];
+  available_setup_tags?: string[];
+  available_mistake_tags?: string[];
+  audit_stats?: AuditStats;
   closed_trades: TradeDeal[];
+}
+
+export type SystemClassification = 'poker' | 'roulette' | 'developing';
+
+export interface OosSliceMetrics {
+  count: number;
+  win_rate: number;
+  net_r: number;
+  expectancy_r: number;
+  profit_factor: number;
+}
+
+export interface ProcessMatrixQuadrant {
+  count: number;
+  pct: number;
+  net_r: number;
+  avg_r: number;
+}
+
+export interface AuditStats {
+  system_classification: SystemClassification;
+  oos_survival: {
+    eligible: boolean;
+    min_trades_required: number;
+    in_sample: OosSliceMetrics;
+    out_of_sample: OosSliceMetrics;
+    oos_survived: boolean;
+    degradation_pct: number;
+    rolling_window_size: number;
+    rolling_positive_pct: number;
+    rolling_windows_count: number;
+  };
+  execution_drift: {
+    sl_widened_count: number;
+    sl_widened_pct: number;
+    sl_widened_extra_r: number;
+    sl_widened_tickets: number[];
+    revenge_count: number;
+    revenge_pct: number;
+    revenge_net_r: number;
+    revenge_tickets: number[];
+    revenge_window_min: number;
+  };
+  process_matrix: {
+    disciplined_win: ProcessMatrixQuadrant;
+    disciplined_loss: ProcessMatrixQuadrant;
+    lucky_gamble: ProcessMatrixQuadrant;
+    self_inflicted_loss: ProcessMatrixQuadrant;
+  };
 }
 
 export type BenchmarkMode = 'coin_flip_direction' | 'window_jitter' | 'random_session';
@@ -437,6 +489,8 @@ export interface BenchmarkRequest {
   magic?: number | null;
   scope?: TradeScope;
   risk_pct?: number;
+  setup_tag?: string;
+  exclude_mistakes?: boolean;
   horizon_bars: number;
   bar_tf: BenchmarkBarTf;
   iterations: number;

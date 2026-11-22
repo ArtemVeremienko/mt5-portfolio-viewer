@@ -34,6 +34,9 @@ def get_portfolio(
     magic: int | None = None,
     scope: str = "all",
     risk_pct: Annotated[float | None, Query(gt=0.0, le=1.0)] = None,
+    setup_tag: str | None = None,
+    exclude_mistakes: bool = False,
+    revenge_window_min: Annotated[int, Query(ge=1, le=240)] = 30,
 ) -> dict[str, Any]:
     account_info: dict[str, Any] = {}
     deals: list[dict[str, Any]] = []
@@ -100,6 +103,10 @@ def get_portfolio(
         direction=direction,
         comment=comment,
         magic=magic,
+        notes_map=notes_map,
+        setup_tag=setup_tag,
+        exclude_mistakes=exclude_mistakes,
+        revenge_window_min=revenge_window_min,
     )
 
     for t in analytics.get("closed_trades", []):
@@ -139,6 +146,8 @@ class BenchmarkRequest(BaseModel):
     magic: int | None = None
     scope: str = "all"
     risk_pct: float | None = Field(default=None, gt=0.0, le=1.0)
+    setup_tag: str | None = None
+    exclude_mistakes: bool = False
     horizon_bars: int = Field(default=30, ge=1, le=200)
     bar_tf: BarTimeframe = "m5"
     iterations: int = Field(default=1000, ge=100, le=5000)
@@ -172,6 +181,8 @@ async def run_portfolio_benchmark(
         magic=payload.magic,
         scope=payload.scope,
         risk_pct=payload.risk_pct,
+        setup_tag=payload.setup_tag,
+        exclude_mistakes=payload.exclude_mistakes,
         horizon_bars=payload.horizon_bars,
         bar_tf=payload.bar_tf,
         iterations=payload.iterations,

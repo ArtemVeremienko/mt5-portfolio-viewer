@@ -3,7 +3,25 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backend.infrastructure.db.migrations import parse_tag_list
+
 _AUTO_SL_TP_RE = re.compile(r"^\[(sl|tp)\s+[\d.]+\]$", re.IGNORECASE)
+
+
+def extract_journal_filter_options(
+    notes_map: dict[int, dict[str, Any]] | None,
+) -> tuple[list[str], list[str]]:
+    """Extract sorted unique setup and mistake tags from trade notes."""
+    if not notes_map:
+        return [], []
+    setups: dict[str, str] = {}
+    mistakes: dict[str, str] = {}
+    for note in notes_map.values():
+        for tag in parse_tag_list(note.get("setup_tag")):
+            setups.setdefault(tag.lower(), tag)
+        for tag in parse_tag_list(note.get("mistake_tag")):
+            mistakes.setdefault(tag.lower(), tag)
+    return sorted(setups.values(), key=str.lower), sorted(mistakes.values(), key=str.lower)
 
 
 def format_duration(seconds: int) -> str:
@@ -64,11 +82,16 @@ def filter_and_scope_deals(
     direction: str | None = None,
     comment: str | None = None,
     magic: int | None = None,
+    notes_map: dict[int, dict[str, Any]] | None = None,
+    setup_tag: str | None = None,
+    exclude_mistakes: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[int, float], float, int]:
-    """Filter deals by time/attributes/scope and return (scoped_deals, entry_fees, scope_bal, avail_count)."""
+    """Filter deals by time/attributes/journal tags/scope and return (scoped_deals, entry_fees, scope_bal, avail_count)."""
     dir_filter = direction.upper().strip() if direction else None
     sym_filter = symbol.upper().strip() if symbol else None
     cmt_filter = comment.lower().strip() if comment else None
+    setup_filter = setup_tag.lower().strip() if setup_tag else None
+    notes_lookup = notes_map or {}
 
     filtered: list[dict[str, Any]] = []
     for d in deals:
@@ -88,6 +111,15 @@ def filter_and_scope_deals(
                 continue
             if magic is not None and int(d.get("magic", 0) or 0) != magic:
                 continue
+            if setup_filter or exclude_mistakes:
+                ticket = int(d.get("ticket", 0) or 0)
+                note = notes_lookup.get(ticket, {})
+                if setup_filter:
+                    deal_setups = {s.lower() for s in parse_tag_list(note.get("setup_tag"))}
+                    if setup_filter not in deal_setups:
+                        continue
+                if exclude_mistakes and parse_tag_list(note.get("mistake_tag")):
+                    continue
         filtered.append(d)
 
     filtered.sort(key=lambda x: (x.get("time", 0), x.get("time_msc", 0)))

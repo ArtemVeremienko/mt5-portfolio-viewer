@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 
+from backend.services.analytics.audit import compute_audit_summary
 from backend.services.analytics.breakdowns import (
     build_calendar_days,
     build_currency_summary,
@@ -18,6 +19,7 @@ from backend.services.analytics.curves import build_curves_and_trades
 from backend.services.analytics.excursions import compute_excursion_stats
 from backend.services.analytics.filters import (
     extract_filter_options,
+    extract_journal_filter_options,
     filter_and_scope_deals,
     format_duration,
 )
@@ -150,10 +152,13 @@ def empty_analytics_response(
         "risk_of_ruin": [],
         "r_distribution": [],
         "excursion_stats": compute_excursion_stats([], []),
+        "audit_stats": compute_audit_summary([], None, r_expectancy=0.0),
         "cashflows": [],
         "available_symbols": [],
         "available_comments": [],
         "available_magics": [],
+        "available_setup_tags": [],
+        "available_mistake_tags": [],
         "closed_trades": [],
     }
 
@@ -169,12 +174,17 @@ def process_portfolio_analytics(
     direction: str | None = None,
     comment: str | None = None,
     magic: int | None = None,
+    notes_map: dict[int, dict[str, Any]] | None = None,
+    setup_tag: str | None = None,
+    exclude_mistakes: bool = False,
+    revenge_window_min: int = 30,
 ) -> dict[str, Any]:
     """Compute Myfxbook performance statistics and Van Tharp R-Multiple analytics."""
     if not deals:
         return empty_analytics_response(current_account, trade_scope=trade_scope)
 
     available_symbols, available_comments, available_magics = extract_filter_options(deals)
+    available_setup_tags, available_mistake_tags = extract_journal_filter_options(notes_map)
     filtered_deals, entry_fees_by_pos, scope_starting_balance, available_closed_count = (
         filter_and_scope_deals(
             deals=deals,
@@ -185,6 +195,9 @@ def process_portfolio_analytics(
             direction=direction,
             comment=comment,
             magic=magic,
+            notes_map=notes_map,
+            setup_tag=setup_tag,
+            exclude_mistakes=exclude_mistakes,
         )
     )
 
@@ -195,6 +208,8 @@ def process_portfolio_analytics(
         and not (direction or "").strip()
         and not (comment or "").strip()
         and magic is None
+        and not (setup_tag or "").strip()
+        and not exclude_mistakes
     )
 
     cstate = build_curves_and_trades(
@@ -479,9 +494,17 @@ def process_portfolio_analytics(
         "risk_of_ruin": risk_of_ruin,
         "r_distribution": build_r_distribution(r_multiples),
         "excursion_stats": compute_excursion_stats(trade_deals, winning_trades),
+        "audit_stats": compute_audit_summary(
+            trade_deals,
+            notes_map,
+            r_expectancy=round(avg_r, 3),
+            revenge_window_min=revenge_window_min,
+        ),
         "cashflows": cstate.cashflows[::-1],
         "available_symbols": available_symbols,
         "available_comments": available_comments,
         "available_magics": available_magics,
+        "available_setup_tags": available_setup_tags,
+        "available_mistake_tags": available_mistake_tags,
         "closed_trades": trade_deals[::-1],
     }

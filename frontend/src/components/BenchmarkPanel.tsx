@@ -24,6 +24,7 @@ import {
 } from 'lucide-solid';
 import { runStrategyBenchmark } from '../api/portfolio';
 import type {
+  AuditStats,
   BenchmarkBarTf,
   BenchmarkFallbackMode,
   BenchmarkMode,
@@ -34,11 +35,16 @@ import type {
 
 interface BenchmarkPanelProps {
   excursionStats: ExcursionStats | null;
+  auditStats: AuditStats | null;
   allAccounts: boolean;
   symbol: string;
   direction: string;
   comment: string;
   magic: string;
+  setupTag: string;
+  excludeMistakes: boolean;
+  revengeWindowMin: number;
+  onRevengeWindowChange: (min: number) => void;
   scope: TradeScope;
 }
 
@@ -69,6 +75,8 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
         comment: props.comment || undefined,
         magic: props.magic ? Number(props.magic) : undefined,
         scope: props.scope,
+        setup_tag: props.setupTag || undefined,
+        exclude_mistakes: props.excludeMistakes,
         horizon_bars: horizonBars(),
         bar_tf: barTf(),
         iterations: iterations(),
@@ -105,6 +113,8 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
         () => props.direction,
         () => props.comment,
         () => props.magic,
+        () => props.setupTag,
+        () => props.excludeMistakes,
         () => props.scope,
       ],
       () => {
@@ -140,8 +150,27 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
               <Dices size={18} />
             </div>
             <div>
-              <h2 class="text-sm font-bold text-slate-100">
-                Coin-Flip Baseline &amp; Edge Ratio Benchmark
+              <h2 class="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <span>Coin-Flip Baseline &amp; Edge Ratio Benchmark</span>
+                <Show when={props.auditStats}>
+                  {(audit) => (
+                    <span
+                      class={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        audit().system_classification === 'poker'
+                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                          : audit().system_classification === 'roulette'
+                            ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                            : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                      }`}
+                    >
+                      {audit().system_classification === 'poker'
+                        ? 'Poker (+EV)'
+                        : audit().system_classification === 'roulette'
+                          ? 'Roulette (E ≤ 0)'
+                          : 'Developing (<30)'}
+                    </span>
+                  )}
+                </Show>
               </h2>
               <p class="text-[11px] text-slate-400">
                 Monte Carlo random-entry simulation on historical OHLC bars + Kelly / Optimal-f sizing
@@ -577,6 +606,249 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
               </div>
             </div>
           </>
+        )}
+      </Show>
+
+      {/* System Audit & Process Discipline Section */}
+      <Show when={props.auditStats}>
+        {(audit) => (
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* 1. In-Sample vs Out-of-Sample Survival */}
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">
+                    In-Sample vs. Out-of-Sample Survival
+                  </h3>
+                  <p class="text-[11px] text-slate-500">
+                    50/50 chronological split &amp; rolling {audit().oos_survival.rolling_window_size}-trade windows
+                  </p>
+                </div>
+                <Show when={audit().oos_survival.eligible}>
+                  <span
+                    class={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      audit().oos_survival.oos_survived
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                    }`}
+                  >
+                    {audit().oos_survival.oos_survived ? 'OOS Survived' : 'OOS Failed'}
+                  </span>
+                </Show>
+              </div>
+
+              <Show
+                when={audit().oos_survival.eligible}
+                fallback={
+                  <div class="text-xs text-slate-400 bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+                    Requires at least {audit().oos_survival.min_trades_required} closed trades to run In-Sample vs. Out-of-Sample split.
+                  </div>
+                }
+              >
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                  <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 space-y-1">
+                    <div class="text-[10px] uppercase text-slate-400 font-semibold">
+                      In-Sample ({audit().oos_survival.in_sample.count})
+                    </div>
+                    <div
+                      class={`text-base font-bold ${
+                        audit().oos_survival.in_sample.expectancy_r > 0
+                          ? 'text-emerald-400'
+                          : 'text-rose-400'
+                      }`}
+                    >
+                      {audit().oos_survival.in_sample.expectancy_r >= 0 ? '+' : ''}
+                      {audit().oos_survival.in_sample.expectancy_r.toFixed(3)}R
+                    </div>
+                    <div class="text-[10px] text-slate-400">
+                      WR {audit().oos_survival.in_sample.win_rate.toFixed(1)}% · PF{' '}
+                      {audit().oos_survival.in_sample.profit_factor.toFixed(2)}
+                    </div>
+                  </div>
+
+                  <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 space-y-1">
+                    <div class="text-[10px] uppercase text-slate-400 font-semibold">
+                      Out-of-Sample ({audit().oos_survival.out_of_sample.count})
+                    </div>
+                    <div
+                      class={`text-base font-bold ${
+                        audit().oos_survival.out_of_sample.expectancy_r > 0
+                          ? 'text-emerald-400'
+                          : 'text-rose-400'
+                      }`}
+                    >
+                      {audit().oos_survival.out_of_sample.expectancy_r >= 0 ? '+' : ''}
+                      {audit().oos_survival.out_of_sample.expectancy_r.toFixed(3)}R
+                    </div>
+                    <div class="text-[10px] text-slate-400">
+                      WR {audit().oos_survival.out_of_sample.win_rate.toFixed(1)}% · PF{' '}
+                      {audit().oos_survival.out_of_sample.profit_factor.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+                <div class="pt-2 border-t border-slate-800/80 flex justify-between text-[11px] text-slate-400">
+                  <span>
+                    Rolling +{audit().oos_survival.rolling_window_size}T Positive:{' '}
+                    <strong class="text-slate-200">
+                      {audit().oos_survival.rolling_positive_pct.toFixed(1)}%
+                    </strong>
+                  </span>
+                  <span>
+                    Decay:{' '}
+                    <strong class="text-slate-200">
+                      {audit().oos_survival.degradation_pct.toFixed(1)}%
+                    </strong>
+                  </span>
+                </div>
+              </Show>
+            </div>
+
+            {/* 2. Execution-Drift Detectors */}
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <div>
+                  <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">
+                    Execution-Drift Detectors
+                  </h3>
+                  <p class="text-[11px] text-slate-500">
+                    SL widening (&lt; -1.15R) &amp; post-loss revenge sizing
+                  </p>
+                </div>
+                <select
+                  aria-label="Revenge Window"
+                  value={String(props.revengeWindowMin)}
+                  onChange={(e) => props.onRevengeWindowChange(Number(e.currentTarget.value))}
+                  class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-blue-500"
+                  title="Time window after a loss to flag ≥1.25x size increases"
+                >
+                  <option value="30">30m window</option>
+                  <option value="60">1h window</option>
+                  <option value="90">1.5h window</option>
+                  <option value="120">2h window</option>
+                </select>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 space-y-1">
+                  <div class="text-[10px] uppercase text-slate-400 font-semibold">SL Widened</div>
+                  <div
+                    class={`text-lg font-extrabold ${
+                      audit().execution_drift.sl_widened_count > 0
+                        ? 'text-rose-400'
+                        : 'text-emerald-400'
+                    }`}
+                  >
+                    {audit().execution_drift.sl_widened_count}
+                    <span class="text-xs font-normal text-slate-400 ml-1">
+                      ({audit().execution_drift.sl_widened_pct.toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div class="text-[10px] text-slate-500">
+                    Extra loss: -{audit().execution_drift.sl_widened_extra_r.toFixed(2)}R
+                  </div>
+                </div>
+
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 space-y-1">
+                  <div class="text-[10px] uppercase text-slate-400 font-semibold">
+                    Revenge Sizing
+                  </div>
+                  <div
+                    class={`text-lg font-extrabold ${
+                      audit().execution_drift.revenge_count > 0
+                        ? 'text-amber-400'
+                        : 'text-emerald-400'
+                    }`}
+                  >
+                    {audit().execution_drift.revenge_count}
+                    <span class="text-xs font-normal text-slate-400 ml-1">
+                      ({audit().execution_drift.revenge_pct.toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div class="text-[10px] text-slate-500">
+                    Net impact: {audit().execution_drift.revenge_net_r >= 0 ? '+' : ''}
+                    {audit().execution_drift.revenge_net_r.toFixed(2)}R
+                  </div>
+                </div>
+              </div>
+              <div class="text-[10px] text-slate-500 pt-1 border-t border-slate-800/80">
+                Flags trades ≥1.25× prior volume/risk within {audit().execution_drift.revenge_window_min}m of a loss or tagged Moved SL / Revenge / Oversized.
+              </div>
+            </div>
+
+            {/* 3. 2x2 Process vs Outcome Matrix */}
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div>
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">
+                  Process vs. Outcome Matrix
+                </h3>
+                <p class="text-[11px] text-slate-500">
+                  Separates disciplined execution from lucky gambles
+                </p>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-2.5">
+                  <div class="text-[10px] uppercase text-emerald-300 font-semibold">
+                    Disciplined Win
+                  </div>
+                  <div class="text-base font-bold text-emerald-200 mt-0.5">
+                    {audit().process_matrix.disciplined_win.count}
+                    <span class="text-[10px] font-normal text-emerald-300/80 ml-1">
+                      ({audit().process_matrix.disciplined_win.pct.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div class="text-[10px] text-emerald-300/80">
+                    +{audit().process_matrix.disciplined_win.net_r.toFixed(2)}R
+                  </div>
+                </div>
+
+                <div class="bg-blue-500/10 border border-blue-500/25 rounded-xl p-2.5">
+                  <div class="text-[10px] uppercase text-blue-300 font-semibold">
+                    Disciplined Loss
+                  </div>
+                  <div class="text-base font-bold text-blue-200 mt-0.5">
+                    {audit().process_matrix.disciplined_loss.count}
+                    <span class="text-[10px] font-normal text-blue-300/80 ml-1">
+                      ({audit().process_matrix.disciplined_loss.pct.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div class="text-[10px] text-blue-300/80">
+                    {audit().process_matrix.disciplined_loss.net_r.toFixed(2)}R
+                  </div>
+                </div>
+
+                <div class="bg-amber-500/10 border border-amber-500/25 rounded-xl p-2.5">
+                  <div class="text-[10px] uppercase text-amber-300 font-semibold">
+                    Lucky Gamble
+                  </div>
+                  <div class="text-base font-bold text-amber-200 mt-0.5">
+                    {audit().process_matrix.lucky_gamble.count}
+                    <span class="text-[10px] font-normal text-amber-300/80 ml-1">
+                      ({audit().process_matrix.lucky_gamble.pct.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div class="text-[10px] text-amber-300/80">
+                    +{audit().process_matrix.lucky_gamble.net_r.toFixed(2)}R
+                  </div>
+                </div>
+
+                <div class="bg-rose-500/10 border border-rose-500/25 rounded-xl p-2.5">
+                  <div class="text-[10px] uppercase text-rose-300 font-semibold">
+                    Self-Inflicted Loss
+                  </div>
+                  <div class="text-base font-bold text-rose-200 mt-0.5">
+                    {audit().process_matrix.self_inflicted_loss.count}
+                    <span class="text-[10px] font-normal text-rose-300/80 ml-1">
+                      ({audit().process_matrix.self_inflicted_loss.pct.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div class="text-[10px] text-rose-300/80">
+                    {audit().process_matrix.self_inflicted_loss.net_r.toFixed(2)}R
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </Show>
     </div>

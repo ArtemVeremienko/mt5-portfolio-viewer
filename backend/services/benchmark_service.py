@@ -48,6 +48,8 @@ def execute_strategy_benchmark(
     magic: int | None = None,
     scope: str = "all",
     risk_pct: float | None = None,
+    setup_tag: str | None = None,
+    exclude_mistakes: bool = False,
     horizon_bars: int = 30,
     bar_tf: BarTimeframe = "m5",
     iterations: int = 1000,
@@ -61,6 +63,7 @@ def execute_strategy_benchmark(
     """Load scoped trades & OHLC candles and run the coin-flip Monte Carlo benchmark."""
     account_info: dict[str, Any] = {}
     deals: list[dict[str, Any]] = []
+    notes_map: dict[int, dict[str, Any]] = {}
 
     with SqliteUnitOfWork(db_path) as uow:
         accounts = uow.accounts.get_all()
@@ -68,11 +71,13 @@ def execute_strategy_benchmark(
             if all_accounts:
                 logins = [int(a["login"]) for a in accounts]
                 deals = uow.deals.get_for_accounts(logins)
+                notes_map = uow.journal.get_notes_for_accounts(logins)
                 account_info = build_combined_account(accounts)
             else:
                 target_login = login or active_login or int(accounts[0]["login"])
                 account_info = uow.accounts.get_by_login(target_login) or {}
                 deals = uow.deals.get_by_account(target_login)
+                notes_map = uow.journal.get_notes_by_account(target_login)
 
     effective_risk_pct = risk_pct if risk_pct is not None else 0.01
     analytics = process_portfolio_analytics(
@@ -85,6 +90,9 @@ def execute_strategy_benchmark(
         direction=direction,
         comment=comment,
         magic=magic,
+        notes_map=notes_map,
+        setup_tag=setup_tag,
+        exclude_mistakes=exclude_mistakes,
     )
     closed_trades: list[dict[str, Any]] = analytics.get("closed_trades", [])
 

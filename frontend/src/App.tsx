@@ -76,6 +76,9 @@ export const App: Component = () => {
   const [filterDirection, setFilterDirection] = createSignal<string>('');
   const [filterComment, setFilterComment] = createSignal<string>('');
   const [filterMagic, setFilterMagic] = createSignal<string>('');
+  const [filterSetupTag, setFilterSetupTag] = createSignal<string>('');
+  const [excludeMistakes, setExcludeMistakes] = createSignal<boolean>(false);
+  const [revengeWindowMin, setRevengeWindowMin] = createSignal<number>(30);
   const [allAccountsMode, setAllAccountsMode] = createSignal<boolean>(false);
   const [isLoading, setIsLoading] = createSignal<boolean>(true);
   const [fetchError, setFetchError] = createSignal<string | null>(null);
@@ -105,6 +108,9 @@ export const App: Component = () => {
         comment: filterComment() || undefined,
         magic: magicStr ? Number(magicStr) : undefined,
         scope: overrideScope || tradeScope(),
+        setupTag: filterSetupTag() || undefined,
+        excludeMistakes: excludeMistakes(),
+        revengeWindowMin: revengeWindowMin(),
       });
       setPortfolioStore('data', reconcile(data));
     } catch (e) {
@@ -123,6 +129,8 @@ export const App: Component = () => {
         filterDirection() ||
         filterComment() ||
         filterMagic() ||
+        filterSetupTag() ||
+        excludeMistakes() ||
         allAccountsMode() ||
         tradeScope() === 'last100'
     );
@@ -134,6 +142,8 @@ export const App: Component = () => {
     setFilterDirection('');
     setFilterComment('');
     setFilterMagic('');
+    setFilterSetupTag('');
+    setExcludeMistakes(false);
     setAllAccountsMode(false);
     setTradeScope('all');
     fetchPortfolio('all');
@@ -351,12 +361,15 @@ export const App: Component = () => {
           direction={filterDirection()}
           comment={filterComment()}
           magic={filterMagic()}
+          setupTag={filterSetupTag()}
+          excludeMistakes={excludeMistakes()}
           allAccountsMode={allAccountsMode()}
           accountsCount={accounts().length}
           tradeScope={tradeScope()}
           availableSymbols={portfolioData()?.available_symbols || []}
           availableComments={portfolioData()?.available_comments || []}
           availableMagics={portfolioData()?.available_magics || []}
+          availableSetupTags={portfolioData()?.available_setup_tags || []}
           hasActiveFilters={hasActiveFilters()}
           onStartDateChange={(val) => { setFilterStartDate(val); fetchPortfolio(); }}
           onEndDateChange={(val) => { setFilterEndDate(val); fetchPortfolio(); }}
@@ -364,6 +377,8 @@ export const App: Component = () => {
           onDirectionChange={(val) => { setFilterDirection(val); fetchPortfolio(); }}
           onCommentChange={(val) => { setFilterComment(val); fetchPortfolio(); }}
           onMagicChange={(val) => { setFilterMagic(val); fetchPortfolio(); }}
+          onSetupTagChange={(val) => { setFilterSetupTag(val); fetchPortfolio(); }}
+          onToggleExcludeMistakes={() => { setExcludeMistakes(!excludeMistakes()); fetchPortfolio(); }}
           onToggleAllAccounts={() => { setAllAccountsMode(!allAccountsMode()); fetchPortfolio(); }}
           onReset={clearAllFilters}
         />
@@ -406,11 +421,16 @@ export const App: Component = () => {
         <Show when={mainTab() === 'benchmark'}>
           <BenchmarkPanel
             excursionStats={portfolioData()?.excursion_stats || null}
+            auditStats={portfolioData()?.audit_stats || null}
             allAccounts={allAccountsMode()}
             symbol={filterSymbol()}
             direction={filterDirection()}
             comment={filterComment()}
             magic={filterMagic()}
+            setupTag={filterSetupTag()}
+            excludeMistakes={excludeMistakes()}
+            revengeWindowMin={revengeWindowMin()}
+            onRevengeWindowChange={(min) => { setRevengeWindowMin(min); fetchPortfolio(); }}
             scope={tradeScope()}
           />
         </Show>

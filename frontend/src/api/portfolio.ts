@@ -23,6 +23,9 @@ export interface PortfolioQueryParams {
   magic?: number | null;
   scope?: TradeScope;
   riskPct?: number;
+  setupTag?: string;
+  excludeMistakes?: boolean;
+  revengeWindowMin?: number;
 }
 
 export function getAccounts(): Promise<AccountsResponse> {
@@ -47,6 +50,11 @@ export function getPortfolio(params: PortfolioQueryParams): Promise<PortfolioDat
   if (params.magic !== null && params.magic !== undefined) qs.set('magic', String(params.magic));
   if (params.scope) qs.set('scope', params.scope);
   if (params.riskPct !== undefined) qs.set('risk_pct', String(params.riskPct));
+  if (params.setupTag) qs.set('setup_tag', params.setupTag);
+  if (params.excludeMistakes) qs.set('exclude_mistakes', 'true');
+  if (params.revengeWindowMin !== undefined) {
+    qs.set('revenge_window_min', String(params.revengeWindowMin));
+  }
   return fetchJson<PortfolioData>(`/api/portfolio?${qs.toString()}`);
 }
 
