@@ -78,3 +78,13 @@ During interactive pair programming and verification cycles, several critical do
    - Introduced 3-layer CSS tokens (`frontend/src/styles/tokens.css`: Primitive `@theme` -> Semantic `:root` -> Component `:root`) plus `chartTheme.ts`.
    - Extracted typed `api/` clients, headless `primitives/` (`useWebSocket`, `useHoverTooltip`, `useClickOutside`), `components/ui/` (`Card`, `Badge`), `utils/formatters.ts` + `chartTransforms.ts`, and `features/layout/` (`GlobalFilterBar`, `OverviewStrip`).
    - Switched `App.tsx` live WebSocket updates to `createStore` + `reconcile`, enabled `strict: true` + `verbatimModuleSyntax: true` in `tsconfig.app.json`, and enforced `eslint-plugin-solid` + Vitest unit tests.
+
+### Milestone 6: Strategy Benchmark, Kelly/Optimal-f & System Audit
+1. **Monte Carlo Strategy Benchmark (`Benchmark` Tab)**:
+   - Added `POST /api/portfolio/benchmark` (`benchmark_service.py` + `services/analytics/benchmark.py`) supporting `coin_flip_direction`, `window_jitter`, and `random_session` bar sampling modes across M1/M5/H1 OHLC data.
+   - Added `v5` SQLite migration for `symbol_candles` (`SymbolCandleRepository`) and `TradingGateway.get_symbol_candles_range` to cache broad historical OHLC ranges for `random_session` simulations.
+   - Added realized and fixed-horizon Edge Ratio ($\text{MFE}_R / \text{MAE}_R$) plus Full/Half/Quarter Kelly and Ralph Vince Optimal-$f$ TWR curve analytics.
+2. **System Audit & Process Discipline**:
+   - Added `services/analytics/audit.py` computing 50/50 In-Sample / Out-of-Sample survival + rolling expectancy, SL-widening & post-loss revenge-sizing drift detectors, and the 2×2 Process-vs-Outcome matrix.
+   - Added Poker (+EV) vs. Roulette ($E \le 0$) classification and 100-trade stabilization progress bar in `VanTharpPanel.tsx`.
+   - Extended `GlobalFilterBar.tsx` and `/api/portfolio` with `setup_tag`, `exclude_mistakes` ("System Only"), and `revenge_window_min` parameters.

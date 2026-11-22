@@ -32,8 +32,9 @@ backend/
 ├── services/
 │   ├── sync_service.py      # MT5 -> SQLite sync & combined-account builder
 │   ├── candle_service.py    # Cache-aside MTF candle retrieval
+│   ├── benchmark_service.py # Strategy benchmark orchestration & symbol candle range caching
 │   ├── live_broadcaster.py  # ConnectionManager & non-blocking 1Hz WS broadcaster
-│   └── analytics/           # Decomposed pipeline: filters, curves, tharp, statistics, breakdowns, excursions, pipeline
+│   └── analytics/           # Decomposed pipeline: filters, curves, tharp, statistics, breakdowns, excursions, benchmark, audit, pipeline
 ├── infrastructure/
 │   ├── db/                  # connection.py (WAL/FK/busy_timeout), migrations.py (PRAGMA user_version), uow.py, repositories.py
 │   └── mt5/                 # gateway.py (LiveMT5Gateway) & simulator.py (SimulatedMT5Gateway)
@@ -44,9 +45,9 @@ backend/
 
 ## 3. Data Model & SQLite Schema
 
-> Full ER diagram, table/index breakdown, migration history (`v1`–`v4`), and SQLite vs. PostgreSQL/MongoDB rationale: [specs/database.md](./database.md).
+> Full ER diagram, table/index breakdown, migration history (`v1`–`v5`), and SQLite vs. PostgreSQL/MongoDB rationale: [specs/database.md](./database.md).
 
-Stored locally in `data/portfolio.db` using `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON`, `PRAGMA busy_timeout=5000`, and versioned migrations tracked via `PRAGMA user_version` (currently **v4**):
+Stored locally in `data/portfolio.db` using `PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON`, `PRAGMA busy_timeout=5000`, and versioned migrations tracked via `PRAGMA user_version` (currently **v5**):
 
 ### `accounts` Table
 - `login` (PRIMARY KEY): MT5 account login number.
@@ -72,6 +73,9 @@ Stores closed trade deals (`entry = DEAL_ENTRY_OUT`) and balance operations (`ty
 ### `trade_candles` Table
 - Composite PK `(ticket, timeframe)` caching zlib-compressed `candles_blob` (with legacy `candles_json` fallback), `cached_at` (`idx_trade_candles_cached_at`), and TTL eviction.
 
+### `symbol_candles` Table
+- Composite PK `(symbol, timeframe)` caching broad historical OHLC ranges (`from_ts`, `to_ts`, zlib-compressed `candles_blob`, `cached_at`) via `SymbolCandleRepository` for `random_session` benchmarking.
+
 ---
 
 ## 4. MT5 Anti-Corruption Layer (`backend/infrastructure/mt5/`)
@@ -94,6 +98,9 @@ When closing a BUY position, the exit deal has `type = DEAL_TYPE_SELL (1)`. `Liv
 ### 4.4 Deterministic Simulation Parity
 `SimulatedMT5Gateway` uses a local `random.Random(seed)` instance (never mutating global `random.seed`) and returns identical deal schemas (including `magic`).
 
+### 4.5 Symbol Candle Range Fetching
+`TradingGateway.get_symbol_candles_range(symbol, timeframe, from_ts, to_ts)` provides broad historical OHLC ranges for `random_session` Monte Carlo benchmarking in both `LiveMT5Gateway` and `SimulatedMT5Gateway`, cached in `symbol_candles` by `benchmark_service.py`.
+
 ---
 
 ## 5. Analytics Engine (`backend/services/analytics/`)
@@ -113,12 +120,14 @@ $$\text{SQN} = \frac{\bar{R}}{\sigma_R} \times \min(10.0, \sqrt{N})$$
 - `min_sample_target`: 30 trades; `benchmark_target`: 100 trades.
 
 ### 5.3 Pipeline Modules (`backend/services/analytics/`)
-- `filters.py`: Time window, symbol, direction, comment, magic, and `scope=last100` slicing.
+- `filters.py`: Time window, symbol, direction, comment, magic, `setup_tag`, `exclude_mistakes` ("System Only"), and `scope=last100` slicing.
 - `curves.py`: TWR equity/balance curves, intra-trade MAE drawdown, and live right-edge floating PnL point.
 - `statistics.py`: Sharpe, Sortino, Wald-Wolfowitz Z-score, AHPR/GHPR, Risk of Ruin, and UTC period PnL.
 - `breakdowns.py`: Monthly matrix, 4-quadrant monthly analytics, symbol/hourly/DoW/calendar aggregations.
-- `excursions.py`: MAE/MFE percentiles (P50/P90) and MFE capture efficiency.
-- `pipeline.py`: Composes the full response and guarantees 100% schema parity for empty deals (`empty_analytics_response`).
+- `excursions.py`: MAE/MFE percentiles (P50/P90), MFE capture efficiency, `edge_ratio`, and `median_edge_ratio` ($\text{MFE}_R / \text{MAE}_R$).
+- `benchmark.py`: Coin-flip, window-jitter, and `random_session` Monte Carlo simulator (`run_coin_flip_monte_carlo`), fixed-horizon Edge Ratio (`compute_fixed_horizon_excursions`), and Kelly / Ralph Vince Optimal-$f$ (`compute_kelly_and_optimal_f`).
+- `audit.py`: System classification (`poker`/`roulette`/`developing`), 50/50 OOS survival & rolling expectancy (`compute_oos_survival`), SL-widening & revenge-sizing drift (`compute_execution_drift`), and 2×2 Process-vs-Outcome matrix (`compute_process_outcome_matrix`).
+- `pipeline.py`: Composes the full response (including `audit_stats`) and guarantees 100% schema parity for empty deals (`empty_analytics_response`).
 
 ---
 
@@ -129,7 +138,8 @@ $$\text{SQN} = \frac{\bar{R}}{\sigma_R} \times \min(10.0, \sqrt{N})$$
 | `/api/accounts` | GET | List synced accounts, active login, and MT5 connection status |
 | `/api/accounts/switch?login=...` | POST | Switch active account login in `app.state` |
 | `/api/sync` | POST | Trigger manual MT5 sync into SQLite |
-| `/api/portfolio` | GET | Portfolio statistics, curves, heatmaps, excursions, and closed trades (`risk_pct` validated `0 < x <= 1`) |
+| `/api/portfolio` | GET | Portfolio statistics, curves, heatmaps, excursions, audit stats, and closed trades (`risk_pct` `0 < x <= 1`, `setup_tag`, `exclude_mistakes`, `revenge_window_min` `1..240`) |
+| `/api/portfolio/benchmark` | POST | Run Coin-Flip / Window-Jitter / Random-Session Monte Carlo benchmark, fixed-horizon E-Ratio, and Kelly/Optimal-$f$ via `benchmark_service.execute_strategy_benchmark` |
 | `/api/trades/open` | GET | Active open positions from MT5/simulator |
 | `/api/trades/note` | POST | Save trade journal note, grades, and normalized tags |
 | `/api/trades/{ticket}/candles` | GET | Cache-aside H1/M5/M1 OHLC bars for a trade |

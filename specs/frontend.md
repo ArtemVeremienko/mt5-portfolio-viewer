@@ -17,7 +17,7 @@ frontend/src/
 │   └── tokens.css                 # 3-layer design tokens (Primitive -> Semantic -> Component)
 ├── api/
 │   ├── client.ts                  # Typed fetchJson<T> + ApiError normalization
-│   ├── portfolio.ts               # getAccounts, getPortfolio, getOpenTrades, switchAccount, syncAccount
+│   ├── portfolio.ts               # getAccounts, getPortfolio, getOpenTrades, switchAccount, syncAccount, runStrategyBenchmark
 │   ├── trades.ts                  # getTradeCandles (AbortSignal), saveTradeNote
 │   └── tags.ts                    # getTags, createTag, updateTag, deleteTag
 ├── primitives/
@@ -33,7 +33,7 @@ frontend/src/
 │   ├── Card.tsx                   # Reusable Card primitive (splitProps)
 │   └── Badge.tsx                  # Reusable Badge primitive (mergeProps + splitProps)
 ├── features/layout/
-│   ├── GlobalFilterBar.tsx        # Date, symbol, direction, EA, magic, and all-accounts filters
+│   ├── GlobalFilterBar.tsx        # Date, symbol, direction, EA, magic, setupTag, excludeMistakes, and all-accounts filters
 │   └── OverviewStrip.tsx          # Today/Week/Month/Floating strip + Prop Risk Guard popover
 └── components/
     ├── Header.tsx                 # Account picker, Metric Mode switch, Sync button
@@ -42,9 +42,10 @@ frontend/src/
     ├── MonthlyHeatmap.tsx         # Monthly return heatmap matrix (Jan-Dec + YTD)
     ├── MonthlyAnalytics.tsx       # 4-quadrant monthly breakdown
     ├── TradingStats.tsx           # Summary, symbol, hourly, and daily overview cards
-    ├── VanTharpPanel.tsx          # Van Tharp SQN card, sample progress indicator, R-Distribution
+    ├── VanTharpPanel.tsx          # Van Tharp SQN card, Poker/Roulette badge, 100-trade stabilization, R-Distribution
     ├── AdvancedStats.tsx          # Extended statistical edge, Risk of Ruin, Duration scatter
     ├── ExcursionPanel.tsx         # MAE/MFE scatter plots & Trade Quality Matrix
+    ├── BenchmarkPanel.tsx         # Coin-Flip/Random-Session Monte Carlo, E-Ratio, Kelly/Optimal-f, OOS Survival, Drift & Process Matrix
     ├── CalendarView.tsx           # Daily P&L calendar + drill-down modal
     ├── TradesTable.tsx            # Open/History/Playbook/Cashflows tabs + Journal modal
     └── TradeChartGrid.tsx         # Multi-timeframe (H1/M5/M1) trade execution chart grid
@@ -69,6 +70,11 @@ Built on **TradingView Lightweight Charts v5**:
 ### 3.3 Strict TypeScript & ESLint (`eslint.config.js` & `tsconfig.app.json`)
 - `tsconfig.app.json` enables `strict: true`, `noUnusedLocals: true`, `noUnusedParameters: true`, `noUncheckedIndexedAccess: true`, and `verbatimModuleSyntax: true`.
 - `eslint.config.js` enforces `eslint-plugin-solid` rules (`solid/reactivity`, `solid/no-destructure`, `solid/prefer-for`, `solid/prefer-show`, `solid/no-react-specific-props`, `solid/no-innerhtml`).
+
+### 3.4 Benchmark & System Audit (`App.tsx`, `BenchmarkPanel.tsx`, `GlobalFilterBar.tsx`, `VanTharpPanel.tsx`)
+- **Benchmark Tab**: `App.tsx` exposes a top-level `Benchmark` tab rendering `BenchmarkPanel.tsx` with reactive synchronization to active account, global filters, and `revengeWindowMin`.
+- **System-Only Filtering**: `GlobalFilterBar.tsx` adds a `setupTag` selector and `excludeMistakes` ("System Only") toggle that propagate to both `/api/portfolio` and `POST /api/portfolio/benchmark`.
+- **Poker vs. Roulette & Stabilization**: `VanTharpPanel.tsx` displays a `Poker (+EV)` / `Roulette (E ≤ 0)` classification badge ($N \ge 30$) and a 100-trade stabilization target progress bar ($30 \le N < 100$).
 
 ---
 

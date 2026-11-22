@@ -11,7 +11,7 @@ All persistence lives in a single embedded **SQLite** database at `data/portfoli
   - `PRAGMA busy_timeout=5000;` — 5-second lock wait preventing transient `database is locked` errors.
   - `row_factory = sqlite3.Row` — dict-like column access.
 - **Transaction Boundary**: Every `with SqliteUnitOfWork(db_path) as uow:` opens a connection, commits on clean exit, rolls back on exception, and always closes the handle.
-- **Schema Versioning**: Tracked via `PRAGMA user_version` (currently **`4`**) in `backend/infrastructure/db/migrations.py`.
+- **Schema Versioning**: Tracked via `PRAGMA user_version` (currently **`5`**) in `backend/infrastructure/db/migrations.py`.
 
 ---
 
@@ -119,6 +119,15 @@ erDiagram
         BLOB candles_blob
         INTEGER cached_at
     }
+
+    symbol_candles {
+        TEXT symbol PK
+        TEXT timeframe PK
+        INTEGER from_ts
+        INTEGER to_ts
+        BLOB candles_blob
+        INTEGER cached_at
+    }
 ```
 
 ---
@@ -134,6 +143,7 @@ erDiagram
 | **`review_tags`** | `id` (auto) | — | `UNIQUE(kind, name_lower)`<br>`idx_review_tags_kind(kind)` | Tag library across `setup`, `exit`, and `mistake` (`entry` / `exit_mgmt` categories). |
 | **`trade_note_tags`** | `(ticket, tag_id)` | `ticket -> trade_notes(ticket) ON DELETE CASCADE`<br>`tag_id -> review_tags(id) ON DELETE CASCADE` | `idx_trade_note_tags_tag(tag_id)` | Normalized M:N join table for `setup`, `exit`, and `mistake` tags enabling indexed usage counts, merges, and cascading deletes. |
 | **`trade_candles`** | `(ticket, timeframe)` | — | `idx_trade_candles_cached_at(cached_at)` | Cache-aside OHLC bars (`h1`, `m5`, `m1`) stored zlib-compressed in `candles_blob` (with legacy `candles_json` read fallback) and TTL eviction. |
+| **`symbol_candles`** | `(symbol, timeframe)` | — | PK | Broad historical OHLC range cache (`from_ts`..`to_ts`) stored zlib-compressed in `candles_blob` for `random_session` benchmarking, managed via `SymbolCandleRepository`. |
 
 ---
 
@@ -143,6 +153,7 @@ erDiagram
 - **`v2`**: Performance indexes (`idx_deals_acc_time`, `idx_deals_acc_entry_time`, `idx_deals_symbol`, `idx_snapshots_acc_time`, `idx_notes_acc`, `idx_review_tags_kind`).
 - **`v3`**: Created `trade_note_tags` join table (`ON DELETE CASCADE`), seeded default `exit` and `mistake` presets, and backfilled legacy `trade_notes` tags.
 - **`v4`**: Rebuilt `deals` with composite `PRIMARY KEY (account_id, ticket)` + `idx_deals_ticket`, normalized `setup` and `exit` tags into `trade_note_tags`, added `candles_blob BLOB` and `idx_trade_candles_cached_at` on `trade_candles`.
+- **`v5`**: Created `symbol_candles` table (`PRIMARY KEY (symbol, timeframe)`) for broad historical OHLC range caching.
 
 ---
 

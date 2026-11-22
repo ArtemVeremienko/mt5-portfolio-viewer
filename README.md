@@ -51,6 +51,16 @@ Built with **FastAPI** (Python 3.14) on the backend and **Solid.js** (Zero Virtu
 - **Offline SQLite Persistence**: Stores all historical deals, orders, and equity snapshots locally in `data/portfolio.db`.
 - **Live WebSocket Stream**: Streams equity, balance, and open position changes every second.
 
+### 5. Strategy Benchmark, Kelly/Optimal-f & System Audit
+- **Coin-Flip & Random-Session Monte Carlo**: Benchmarks strategy entries against random 50/50 coin-flip directions, entry-window jitter, or random session bars (`random_session`) across `100`–`5,000` iterations on cached M1/M5/H1 OHLC bars, reporting p-value, percentile rank, and simulated vs. actual expectancy.
+- **Edge Ratio (E-Ratio)**: Tracks both realized and fixed-horizon ($N$-bar forward) $\text{MFE}_R / \text{MAE}_R$ to isolate pure entry edge from exit management.
+- **Kelly Criterion & Ralph Vince Optimal-$f$**: Computes Full/Half/Quarter Kelly and empirical Optimal-$f$ (via TWR maximization over normalized holding-period returns) with an interactive TWR curve.
+- **System Audit & Process Discipline**:
+  - **OOS Survival & Classification**: Classifies systems (*Developing*, *Poker +EV*, *Roulette*) and runs a chronological 50/50 In-Sample / Out-of-Sample split with rolling expectancy survival.
+  - **Execution-Drift Detectors**: Flags SL-widening and post-loss revenge sizing within a configurable `revenge_window_min` window.
+  - **Process-vs-Outcome 2×2 Matrix**: Categorizes trades into *Disciplined Win*, *Disciplined Loss*, *Lucky Gamble*, and *Self-Inflicted Loss*.
+  - **System-Only Filtering**: Filter the entire dashboard and benchmark by `setup_tag` or toggle `exclude_mistakes` ("System Only").
+
 ---
 
 ## 🚀 Quick Start
@@ -108,6 +118,7 @@ All calculations (1R risk model, SQN formula, Drawdown, SQLite persistence) are 
 Detailed architectural specifications and engineering guides are available in the repository:
 - **[System Overview & Evolution](./specs/overview.md)**: Project genesis, milestones, and design history.
 - **[Backend Architecture](./specs/backend.md)**: FastAPI routes, MT5 service, SQLite schema, and analytics engine.
+- **[Database Architecture](./specs/database.md)**: SQLite v5 schema, ER diagram, migrations, and engine selection.
 - **[Frontend Architecture](./specs/frontend.md)**: Solid.js components, Lightweight Charts split scaling, and reactivity models.
 - **[MT5 Domain Quirks](./specs/mt5-quirks.md)**: Position orders vs closing deals, deal direction inversion, index CFD point valuation, and breakeven trade handling.
 - **[AI Agent Handbook (AGENTS.md)](./AGENTS.md)**: Operational guide and best practices for AI agents working in this repository.
