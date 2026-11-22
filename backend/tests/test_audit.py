@@ -108,6 +108,20 @@ def test_oos_survival_split_and_small_sample() -> None:
     assert res["oos_survived"] is True
     assert res["rolling_positive_pct"] == 100.0
 
+    # Negative In-Sample expectancy -> degradation_pct should be None (not inflated %)
+    neg_is = [
+        _make_deal(
+            i,
+            open_time=1000 + i * 3600,
+            close_time=2000 + i * 3600,
+            r_multiple=-0.1 if i < 10 else -0.5,
+            net_profit=-10.0 if i < 10 else -50.0,
+        )
+        for i in range(20)
+    ]
+    neg_res = compute_oos_survival(neg_is)  # type: ignore[arg-type]
+    assert neg_res["degradation_pct"] is None
+
 
 def test_execution_drift_sl_widening_and_revenge_window() -> None:
     trades = [

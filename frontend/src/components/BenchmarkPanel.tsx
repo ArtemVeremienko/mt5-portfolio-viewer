@@ -18,6 +18,7 @@ import {
   Coins,
   Dices,
   Gauge,
+  Info,
   Play,
   ShieldAlert,
   TrendingUp,
@@ -36,6 +37,7 @@ import type {
 interface BenchmarkPanelProps {
   excursionStats: ExcursionStats | null;
   auditStats: AuditStats | null;
+  activeLogin: number | null;
   allAccounts: boolean;
   symbol: string;
   direction: string;
@@ -46,6 +48,19 @@ interface BenchmarkPanelProps {
   revengeWindowMin: number;
   onRevengeWindowChange: (min: number) => void;
   scope: TradeScope;
+}
+
+function formatSignedR(val: number, decimals = 2): string {
+  const fixed = Math.abs(val) < 10 ** -(decimals + 1) ? 0 : val;
+  if (fixed > 0) return `+${fixed.toFixed(decimals)}R`;
+  if (fixed < 0) return `-${Math.abs(fixed).toFixed(decimals)}R`;
+  return `${(0).toFixed(decimals)}R`;
+}
+
+function formatEdgeRatio(val: number | null | undefined): string {
+  if (val === null) return '∞ (0 MAE)';
+  if (val === undefined) return '0.00';
+  return val.toFixed(2);
 }
 
 export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
@@ -61,10 +76,29 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
   const [isRunning, setIsRunning] = createSignal<boolean>(false);
   const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
   const [result, setResult] = createSignal<BenchmarkResponse | null>(null);
+  const [executedConfigKey, setExecutedConfigKey] = createSignal<string>('');
   let latestRunId = 0;
+
+  const currentConfigKey = createMemo(() =>
+    JSON.stringify([
+      barTf(),
+      horizonBars(),
+      iterations(),
+      mode(),
+      fallbackMode(),
+      atrMult(),
+      fixedRr(),
+      includeCosts(),
+    ]),
+  );
+
+  const isParamsStale = createMemo(
+    () => Boolean(executedConfigKey()) && executedConfigKey() !== currentConfigKey(),
+  );
 
   const executeSimulation = async () => {
     const runId = ++latestRunId;
+    const snapKey = currentConfigKey();
     setIsRunning(true);
     setErrorMsg(null);
     try {
@@ -89,10 +123,17 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
       });
       if (runId === latestRunId) {
         setResult(res);
+        setExecutedConfigKey(snapKey);
       }
     } catch (e) {
       if (runId === latestRunId) {
-        setErrorMsg(e instanceof Error ? e.message : 'Failed to run benchmark simulation.');
+        const msg =
+          e instanceof Error
+            ? e.message
+            : typeof e === 'string'
+              ? e
+              : 'Failed to run benchmark simulation.';
+        setErrorMsg(msg);
       }
     } finally {
       if (runId === latestRunId) {
@@ -108,6 +149,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
   createEffect(
     on(
       [
+        () => props.activeLogin,
         () => props.allAccounts,
         () => props.symbol,
         () => props.direction,
@@ -129,15 +171,48 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
     return Math.max(1, ...bins.map((b) => b.count));
   });
 
+  const histRange = createMemo(() => {
+    const bins = result()?.histogram || [];
+    const first = bins[0];
+    const last = bins[bins.length - 1];
+    if (!first || !last) return { min: 0, max: 0 };
+    return {
+      min: first.bin_start,
+      max: last.bin_end,
+    };
+  });
+
+  const isActualOffScale = createMemo(() => {
+    const res = result();
+    const bins = res?.histogram || [];
+    const first = bins[0];
+    const last = bins[bins.length - 1];
+    if (!res || !first || !last) return null;
+    if (res.actual.net_r > last.bin_end) return 'above';
+    if (res.actual.net_r < first.bin_start) return 'below';
+    return null;
+  });
+
   const maxTwr = createMemo(() => {
     const curve = result()?.sizing.twr_curve || [];
     return Math.max(1.01, ...curve.map((p) => p.twr));
   });
 
-  const inTradeEdgeRatio = createMemo(() => {
+  const inTradeEdgeRatio = createMemo<number | null>(() => {
     const res = result();
     if (res) return res.actual.in_trade_edge_ratio;
     return props.excursionStats?.edge_ratio ?? 0;
+  });
+
+  const modeDescription = createMemo(() => {
+    switch (mode()) {
+      case 'coin_flip_direction':
+        return 'Random 50/50 BUY/SELL at each trade’s exact open time.';
+      case 'window_jitter':
+        return 'Random direction + random entry bar offset (−20 / +10 bars around open).';
+      case 'random_session':
+        return 'Random direction + random bar sampled from your active UTC session hours.';
+    }
   });
 
   return (
@@ -150,12 +225,19 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
               <Dices size={18} />
             </div>
             <div>
-              <h2 class="text-sm font-bold text-slate-100 flex items-center gap-2">
+              <h2 class="text-sm font-bold text-slate-100 flex flex-wrap items-center gap-2">
                 <span>Coin-Flip Baseline &amp; Edge Ratio Benchmark</span>
                 <Show when={props.auditStats}>
                   {(audit) => (
                     <span
-                      class={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      title={
+                        audit().system_classification === 'poker'
+                          ? 'Net Expectancy > 0R with ≥ 30 trades (overall expectancy, independent of Monte Carlo p-value)'
+                          : audit().system_classification === 'roulette'
+                            ? 'Net Expectancy ≤ 0R with ≥ 30 trades'
+                            : 'Fewer than 30 trades — sample size still developing'
+                      }
+                      class={`text-[10px] font-bold px-2 py-0.5 rounded-full border cursor-help ${
                         audit().system_classification === 'poker'
                           ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                           : audit().system_classification === 'roulette'
@@ -178,15 +260,26 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={isRunning()}
-            onClick={() => void executeSimulation()}
-            class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white shadow-md shadow-blue-600/20 transition-all"
-          >
-            <Play size={14} />
-            <span>{isRunning() ? 'Simulating...' : 'Run Simulation'}</span>
-          </button>
+          <div class="flex items-center gap-2.5">
+            <Show when={isParamsStale() && !isRunning()}>
+              <span class="text-[11px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1">
+                Parameters changed — click Run Simulation
+              </span>
+            </Show>
+            <button
+              type="button"
+              disabled={isRunning()}
+              onClick={() => void executeSimulation()}
+              class={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold disabled:opacity-50 text-white shadow-md transition-all ${
+                isParamsStale()
+                  ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30 ring-2 ring-amber-400/50'
+                  : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/20'
+              }`}
+            >
+              <Play size={14} />
+              <span>{isRunning() ? 'Simulating...' : 'Run Simulation'}</span>
+            </button>
+          </div>
         </div>
 
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
@@ -206,7 +299,10 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
           </label>
 
           <label class="flex flex-col gap-1">
-            <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+            <span
+              class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold"
+              title="Number of bars scanned forward after entry (ignoring SL/TP) to measure pure entry Edge Ratio"
+            >
               Forward Horizon (N)
             </span>
             <select
@@ -236,9 +332,10 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
             </select>
           </label>
 
-          <label class="flex flex-col gap-1">
-            <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
-              Entry Mode
+          <label class="flex flex-col gap-1" title={modeDescription()}>
+            <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1">
+              <span>Entry Mode</span>
+              <Info size={11} class="text-slate-500" />
             </span>
             <select
               value={mode()}
@@ -251,7 +348,10 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
             </select>
           </label>
 
-          <label class="flex flex-col gap-1">
+          <label
+            class="flex flex-col gap-1"
+            title="Exit rule used for trades that lacked an explicit SL or TP on the MT5 order"
+          >
             <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
               No-SL/TP Fallback
             </span>
@@ -261,13 +361,16 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
               class="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500"
             >
               <option value="realized_1r">Realized 1R (Default)</option>
-              <option value="atr">ATR Override</option>
+              <option value="atr">ATR(14) Override</option>
               <option value="fixed_rr">Fixed R:R Override</option>
             </select>
           </label>
 
           <div class="flex flex-col justify-end gap-1">
-            <label class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer select-none">
+            <label
+              class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer select-none"
+              title="Deduct recorded commission + swap normalized by 1R on simulated trades"
+            >
               <input
                 type="checkbox"
                 checked={includeCosts()}
@@ -279,11 +382,13 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
           </div>
         </div>
 
+        <div class="mt-2 text-[11px] text-slate-500">{modeDescription()}</div>
+
         <Show when={fallbackMode() === 'atr' || fallbackMode() === 'fixed_rr'}>
-          <div class="mt-2.5 pt-2.5 border-t border-slate-800/80 flex flex-wrap gap-3 text-xs">
+          <div class="mt-2.5 pt-2.5 border-t border-slate-800/80 flex flex-wrap gap-4 text-xs">
             <Show when={fallbackMode() === 'atr'}>
               <label class="flex items-center gap-2">
-                <span class="text-slate-400">ATR Multiplier:</span>
+                <span class="text-slate-400">ATR(14) Multiplier (SL = N × ATR):</span>
                 <input
                   type="number"
                   step="0.25"
@@ -296,7 +401,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
               </label>
             </Show>
             <label class="flex items-center gap-2">
-              <span class="text-slate-400">Target R:R:</span>
+              <span class="text-slate-400">Target R:R (TP = N × SL):</span>
               <input
                 type="number"
                 step="0.25"
@@ -319,7 +424,18 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
 
       <Show when={result()}>
         {(res) => (
-          <>
+          <div class={`space-y-4 transition-opacity ${isRunning() ? 'opacity-60 pointer-events-none' : ''}`}>
+            {/* Skipped trades notice */}
+            <Show when={(res().skipped_trades ?? 0) > 0 && res().eligible_trades > 0}>
+              <div class="flex items-center gap-2 bg-slate-900/70 border border-slate-800 rounded-xl px-3.5 py-2 text-[11px] text-slate-300">
+                <Info size={14} class="text-blue-400 shrink-0" />
+                <span>
+                  Evaluated <strong>{res().eligible_trades}</strong> of{' '}
+                  <strong>{res().total_trades}</strong> trades ({res().skipped_trades} skipped due to missing {res().timeframe.toUpperCase()} OHLC bars).
+                </span>
+              </div>
+            </Show>
+
             {/* Diagnostic Verdict Banner */}
             <Switch>
               <Match when={res().verdict === 'significant_edge'}>
@@ -330,7 +446,20 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                       Statistically Significant Entry Edge (p = {res().percentiles.p_value_net_r.toFixed(3)})
                     </div>
                     <div class="text-emerald-200/80 mt-0.5">
-                      Your strategy outperforms {res().percentiles.net_r_pct}% of {res().iterations.toLocaleString()} random-entry runs on the same historical bars with a fixed-horizon E-ratio of {res().actual.horizon_edge_ratio.toFixed(2)}.
+                      Your strategy outperforms {formatOrdinal(res().percentiles.net_r_pct)} percentile of {res().iterations.toLocaleString()} random-entry runs on the same historical bars with a {res().horizon_bars}-bar E-ratio of {formatEdgeRatio(res().actual.horizon_edge_ratio)}.
+                    </div>
+                  </div>
+                </div>
+              </Match>
+              <Match when={res().verdict === 'mixed_signal'}>
+                <div class="flex items-start gap-3 bg-blue-500/10 border border-blue-500/30 rounded-2xl px-4 py-3 text-xs text-blue-200">
+                  <Info size={18} class="text-blue-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div class="font-bold text-blue-300">
+                      Mixed Signal: Net R Beats Random (p = {res().percentiles.p_value_net_r.toFixed(3)}), Low Horizon E-Ratio ({formatEdgeRatio(res().actual.horizon_edge_ratio)})
+                    </div>
+                    <div class="text-blue-200/80 mt-0.5">
+                      Your Net R ranks at the {formatOrdinal(res().percentiles.net_r_pct)} percentile, but {res().horizon_bars}-bar uncapped E-Ratio is below 1.25 — suggesting edge comes from trade management / exits rather than immediate entry timing.
                     </div>
                   </div>
                 </div>
@@ -341,7 +470,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   <div>
                     <div class="font-bold text-amber-300">No Cached OHLC Bars Found for Selected Scope</div>
                     <div class="text-amber-200/80 mt-0.5">
-                      Open a trade chart or connect MT5 so historical {res().timeframe.toUpperCase()} candles can be cached for Monte Carlo bar replay. In-trade E-ratio ({inTradeEdgeRatio().toFixed(2)}) and Kelly / Optimal-f sizing are still computed below.
+                      Open a trade chart or connect MT5 so historical {res().timeframe.toUpperCase()} candles can be cached for Monte Carlo bar replay. In-trade E-ratio ({formatEdgeRatio(inTradeEdgeRatio())}) and Kelly / Optimal-f sizing are still computed below.
                     </div>
                   </div>
                 </div>
@@ -374,23 +503,37 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
               </Match>
             </Switch>
 
+            <Show when={res().percentiles.win_rate_pct >= 95 && res().percentiles.net_r_pct < 50 && res().eligible_trades >= 20}>
+              <div class="flex items-center gap-2 bg-amber-500/10 border border-amber-500/25 rounded-xl px-3.5 py-2 text-[11px] text-amber-200">
+                <AlertTriangle size={14} class="text-amber-400 shrink-0" />
+                <span>
+                  Win Rate beats {formatOrdinal(res().percentiles.win_rate_pct)} pct of random entries, but Net R sits at {formatOrdinal(res().percentiles.net_r_pct)} pct — average loss size / R:R is eroding your entry timing edge.
+                </span>
+              </div>
+            </Show>
+
             {/* Primary KPI Comparison Grid */}
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Edge Ratio Card */}
               <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-2.5">
-                <div class="flex items-center justify-between text-xs text-slate-400">
+                <div
+                  class="flex items-center justify-between text-xs text-slate-400"
+                  title="Uncapped MFE / MAE over N bars after entry vs. In-Trade MFE / MAE from entry to actual exit"
+                >
                   <span class="font-semibold uppercase tracking-wider">Edge Ratio (MFE / MAE)</span>
                   <TrendingUp size={15} class="text-blue-400" />
                 </div>
                 <div class="flex items-baseline justify-between">
                   <div>
                     <div class="text-2xl font-extrabold text-slate-100">
-                      {res().actual.horizon_edge_ratio > 0
-                        ? res().actual.horizon_edge_ratio.toFixed(2)
-                        : inTradeEdgeRatio().toFixed(2)}
+                      {res().actual.horizon_edge_ratio === null
+                        ? '∞ (0 MAE)'
+                        : res().actual.horizon_edge_ratio! > 0
+                          ? formatEdgeRatio(res().actual.horizon_edge_ratio)
+                          : formatEdgeRatio(inTradeEdgeRatio())}
                     </div>
                     <div class="text-[11px] text-slate-400">
-                      {res().horizon_bars}-bar Horizon ({res().actual.horizon_avg_mfe_r.toFixed(2)}R / {res().actual.horizon_avg_mae_r.toFixed(2)}R)
+                      {res().horizon_bars}-bar Uncapped ({res().actual.horizon_avg_mfe_r.toFixed(2)}R / {res().actual.horizon_avg_mae_r.toFixed(2)}R)
                     </div>
                   </div>
                   <div class="text-right">
@@ -401,7 +544,9 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   </div>
                 </div>
                 <div class="pt-2 border-t border-slate-800/80 flex justify-between text-[11px] text-slate-400">
-                  <span>In-Trade E-Ratio: <strong class="text-slate-200">{inTradeEdgeRatio().toFixed(2)}</strong></span>
+                  <span title="MFE / MAE measured strictly between entry and actual exit">
+                    In-Trade E-Ratio: <strong class="text-slate-200">{formatEdgeRatio(inTradeEdgeRatio())}</strong>
+                  </span>
                   <span>Random p95: <strong class="text-slate-200">{res().random_baseline.edge_ratio_p95.toFixed(2)}</strong></span>
                 </div>
               </div>
@@ -426,7 +571,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                       {res().actual.breakeven_win_rate.toFixed(1)}%
                     </div>
                     <div class="text-[11px] text-slate-500">
-                      Breakeven (1:{res().actual.avg_rr.toFixed(1)})
+                      Breakeven (Avg R:R {res().actual.avg_rr.toFixed(2)})
                     </div>
                   </div>
                 </div>
@@ -446,14 +591,17 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   <div>
                     <div
                       class={`text-2xl font-extrabold ${
-                        res().actual.net_r >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                        res().actual.net_r > 0
+                          ? 'text-emerald-400'
+                          : res().actual.net_r < 0
+                            ? 'text-rose-400'
+                            : 'text-slate-200'
                       }`}
                     >
-                      {res().actual.net_r >= 0 ? '+' : ''}
-                      {res().actual.net_r.toFixed(2)}R
+                      {formatSignedR(res().actual.net_r, 2)}
                     </div>
                     <div class="text-[11px] text-slate-400">
-                      Expectancy: {res().actual.expectancy_r >= 0 ? '+' : ''}{res().actual.expectancy_r.toFixed(3)}R / trade
+                      Expectancy: {formatSignedR(res().actual.expectancy_r, 3)} / trade
                     </div>
                   </div>
                   <div class="text-right">
@@ -464,8 +612,8 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   </div>
                 </div>
                 <div class="pt-2 border-t border-slate-800/80 flex justify-between text-[11px] text-slate-400">
-                  <span>Random p50: <strong class="text-slate-200">{res().random_baseline.net_r_p50.toFixed(1)}R</strong></span>
-                  <span>Random p95: <strong class="text-slate-200">{res().random_baseline.net_r_p95.toFixed(1)}R</strong></span>
+                  <span>Random p50: <strong class="text-slate-200">{formatSignedR(res().random_baseline.net_r_p50, 1)}</strong></span>
+                  <span>Random p95: <strong class="text-slate-200">{formatSignedR(res().random_baseline.net_r_p95, 1)}</strong></span>
                 </div>
               </div>
             </div>
@@ -474,15 +622,22 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Monte Carlo Net R Histogram */}
               <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
-                <div class="flex items-center justify-between">
+                <div class="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">
-                      Monte Carlo Net R Distribution ({res().eligible_trades} Trades × {res().iterations.toLocaleString()} Runs)
+                      Monte Carlo Net R Distribution ({res().eligible_trades} {res().eligible_trades === 1 ? 'Trade' : 'Trades'} × {res().iterations.toLocaleString()} Runs)
                     </h3>
                     <p class="text-[11px] text-slate-500">
                       Simulated random-entry outcomes on the same historical bars
                     </p>
                   </div>
+                  <Show when={isActualOffScale()}>
+                    {(dir) => (
+                      <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                        Actual {formatSignedR(res().actual.net_r, 2)} ({dir() === 'above' ? 'above max bin →' : '← below min bin'})
+                      </span>
+                    )}
+                  </Show>
                 </div>
 
                 <Show
@@ -493,39 +648,54 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                     </div>
                   }
                 >
-                  <div class="h-44 flex items-end gap-1 pt-4 pb-1 px-1 bg-slate-950/60 rounded-xl border border-slate-800/80">
-                    <For each={res().histogram}>
-                      {(bin) => {
-                        const heightPct = Math.max(3, (bin.count / maxHistCount()) * 100);
-                        const containsActual =
-                          res().actual.net_r >= bin.bin_start &&
-                          res().actual.net_r <= bin.bin_end;
-                        const aboveP95 = bin.bin_start >= res().random_baseline.net_r_p95;
-                        return (
-                          <div
-                            class="flex-1 h-full flex flex-col justify-end items-center group relative"
-                            title={`[${bin.bin_start.toFixed(1)}R, ${bin.bin_end.toFixed(1)}R]: ${bin.count} ${bin.count === 1 ? 'run' : 'runs'}`}
-                          >
+                  <div class="relative">
+                    <div class="flex justify-between text-[10px] text-slate-500 font-mono mb-1">
+                      <span>Max freq: {maxHistCount()} runs</span>
+                      <span>
+                        Range: {formatSignedR(histRange().min, 1)} to {formatSignedR(histRange().max, 1)}
+                      </span>
+                    </div>
+                    <div class="h-40 flex items-end gap-1 pt-3 pb-1 px-1 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                      <For each={res().histogram}>
+                        {(bin) => {
+                          const heightPct = Math.max(3, (bin.count / maxHistCount()) * 100);
+                          const containsActual =
+                            res().actual.net_r >= bin.bin_start &&
+                            res().actual.net_r <= bin.bin_end;
+                          const aboveP95 = bin.bin_start >= res().random_baseline.net_r_p95;
+                          return (
                             <div
-                              style={{ height: `${heightPct}%` }}
-                              class={`w-full rounded-t transition-all ${
-                                containsActual
-                                  ? 'bg-blue-500 ring-2 ring-blue-300/60'
-                                  : aboveP95
-                                    ? 'bg-emerald-500/70 group-hover:bg-emerald-400'
-                                    : 'bg-slate-700/80 group-hover:bg-slate-600'
-                              }`}
-                            />
-                          </div>
-                        );
-                      }}
-                    </For>
+                              class="flex-1 h-full flex flex-col justify-end items-center group relative"
+                              title={`[${bin.bin_start.toFixed(1)}R, ${bin.bin_end.toFixed(1)}R]: ${bin.count} ${bin.count === 1 ? 'run' : 'runs'}`}
+                            >
+                              <div
+                                style={{ height: `${heightPct}%` }}
+                                class={`w-full rounded-t transition-all ${
+                                  containsActual
+                                    ? 'bg-blue-500 ring-2 ring-blue-300/60'
+                                    : aboveP95
+                                      ? 'bg-emerald-500/70 group-hover:bg-emerald-400'
+                                      : 'bg-slate-700/80 group-hover:bg-slate-600'
+                                }`}
+                              />
+                            </div>
+                          );
+                        }}
+                      </For>
+                    </div>
                   </div>
-                  <div class="flex justify-between text-[10px] text-slate-500 font-mono">
-                    <span>p5: {res().random_baseline.net_r_p5.toFixed(1)}R</span>
-                    <span>p50: {res().random_baseline.net_r_p50.toFixed(1)}R</span>
-                    <span class="text-emerald-400">p95: {res().random_baseline.net_r_p95.toFixed(1)}R</span>
-                    <span class="text-blue-400 font-bold">Actual: {res().actual.net_r.toFixed(1)}R</span>
+                  <div class="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400 pt-1 border-t border-slate-800/70">
+                    <div class="flex items-center gap-3 font-mono">
+                      <span>p5: {formatSignedR(res().random_baseline.net_r_p5, 1)}</span>
+                      <span>p50: {formatSignedR(res().random_baseline.net_r_p50, 1)}</span>
+                      <span class="text-emerald-400">p95: {formatSignedR(res().random_baseline.net_r_p95, 1)}</span>
+                      <span class="text-blue-400 font-bold">Actual: {formatSignedR(res().actual.net_r, 2)}</span>
+                    </div>
+                    <div class="flex items-center gap-2.5 text-[10px] text-slate-500">
+                      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-blue-500 inline-block" /> Actual</span>
+                      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-emerald-500/70 inline-block" /> ≥ p95</span>
+                      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-slate-700 inline-block" /> Random</span>
+                    </div>
                   </div>
                 </Show>
               </div>
@@ -538,14 +708,17 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                       Position Sizing: Kelly Criterion &amp; Optimal-f
                     </h3>
                     <p class="text-[11px] text-slate-500">
-                      Theoretical geometric growth vs. practical fractional risk (Current: {res().sizing.current_risk_pct.toFixed(2)}% / 1R)
+                      Assumed 1R baseline: {res().sizing.current_risk_pct.toFixed(2)}% / trade
                     </p>
                   </div>
                   <Coins size={16} class="text-amber-400" />
                 </div>
 
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
+                  <div
+                    class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5"
+                    title="Win% − (Loss% ÷ AvgWinR/AvgLossR)"
+                  >
                     <div class="text-[10px] text-slate-400 uppercase">Full Kelly</div>
                     <div class="text-base font-bold text-slate-200 mt-0.5">
                       {res().sizing.full_kelly_pct.toFixed(2)}%
@@ -563,8 +736,11 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                       {res().sizing.quarter_kelly_pct.toFixed(2)}%
                     </div>
                   </div>
-                  <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5">
-                    <div class="text-[10px] text-slate-400 uppercase">0.25× Optimal-f</div>
+                  <div
+                    class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5"
+                    title="0.25× Optimal-f converted to % account risk per 1R trade (f* ÷ |Worst Loss R| × 0.25)"
+                  >
+                    <div class="text-[10px] text-slate-400 uppercase">0.25× Opt-f Risk</div>
                     <div class="text-base font-bold text-amber-400 mt-0.5">
                       {res().sizing.quarter_optimal_f_risk_pct.toFixed(2)}%
                     </div>
@@ -574,11 +750,20 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   </div>
                 </div>
 
-                <Show when={res().sizing.twr_curve.length > 0}>
+                <Show
+                  when={res().sizing.twr_curve.length > 0}
+                  fallback={
+                    <div class="h-20 flex items-center justify-center text-[11px] text-slate-500 bg-slate-950/60 rounded-xl border border-slate-800/80 px-3 text-center">
+                      No positive Terminal Wealth Relative (TWR) growth curve when Optimal-f = 0%.
+                    </div>
+                  }
+                >
                   <div class="space-y-1">
                     <div class="flex justify-between text-[10px] text-slate-400">
-                      <span>TWR(f) Growth Curve</span>
-                      <span>Peak TWR: <strong class="text-slate-200">{res().sizing.max_twr.toFixed(2)}×</strong></span>
+                      <span>Terminal Wealth Relative TWR(f) · f = 4% to 96%</span>
+                      <span>
+                        Peak TWR: <strong class="text-slate-200">{res().sizing.max_twr.toFixed(2)}×</strong>
+                      </span>
                     </div>
                     <div class="h-20 flex items-end gap-0.5 px-1 pt-2 bg-slate-950/60 rounded-xl border border-slate-800/80">
                       <For each={res().sizing.twr_curve}>
@@ -588,7 +773,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                           return (
                             <div
                               style={{ height: `${h}%` }}
-                              title={`f=${pt.f_pct}% -> TWR=${pt.twr}x`}
+                              title={`f=${pt.f_pct}% of worst loss -> TWR=${pt.twr}x`}
                               class={`flex-1 rounded-t ${isPeak ? 'bg-amber-400' : 'bg-blue-500/60'}`}
                             />
                           );
@@ -605,7 +790,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                 </Show>
               </div>
             </div>
-          </>
+          </div>
         )}
       </Show>
 
@@ -654,11 +839,13 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                       class={`text-base font-bold ${
                         audit().oos_survival.in_sample.expectancy_r > 0
                           ? 'text-emerald-400'
-                          : 'text-rose-400'
+                          : audit().oos_survival.in_sample.expectancy_r < 0
+                            ? 'text-rose-400'
+                            : 'text-slate-200'
                       }`}
                     >
-                      {audit().oos_survival.in_sample.expectancy_r >= 0 ? '+' : ''}
-                      {audit().oos_survival.in_sample.expectancy_r.toFixed(3)}R
+                      {formatSignedR(audit().oos_survival.in_sample.expectancy_r, 3)}
+                      <span class="text-[10px] font-normal text-slate-400"> / trade</span>
                     </div>
                     <div class="text-[10px] text-slate-400">
                       WR {audit().oos_survival.in_sample.win_rate.toFixed(1)}% · PF{' '}
@@ -674,11 +861,13 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                       class={`text-base font-bold ${
                         audit().oos_survival.out_of_sample.expectancy_r > 0
                           ? 'text-emerald-400'
-                          : 'text-rose-400'
+                          : audit().oos_survival.out_of_sample.expectancy_r < 0
+                            ? 'text-rose-400'
+                            : 'text-slate-200'
                       }`}
                     >
-                      {audit().oos_survival.out_of_sample.expectancy_r >= 0 ? '+' : ''}
-                      {audit().oos_survival.out_of_sample.expectancy_r.toFixed(3)}R
+                      {formatSignedR(audit().oos_survival.out_of_sample.expectancy_r, 3)}
+                      <span class="text-[10px] font-normal text-slate-400"> / trade</span>
                     </div>
                     <div class="text-[10px] text-slate-400">
                       WR {audit().oos_survival.out_of_sample.win_rate.toFixed(1)}% · PF{' '}
@@ -688,7 +877,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                 </div>
                 <div class="pt-2 border-t border-slate-800/80 flex justify-between text-[11px] text-slate-400">
                   <span>
-                    Rolling +{audit().oos_survival.rolling_window_size}T Positive:{' '}
+                    Rolling {audit().oos_survival.rolling_window_size}-Trade Windows Positive:{' '}
                     <strong class="text-slate-200">
                       {audit().oos_survival.rolling_positive_pct.toFixed(1)}%
                     </strong>
@@ -696,7 +885,10 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   <span>
                     Decay:{' '}
                     <strong class="text-slate-200">
-                      {audit().oos_survival.degradation_pct.toFixed(1)}%
+                      {(() => {
+                        const deg = audit().oos_survival.degradation_pct;
+                        return deg === null ? 'N/A (IS ≤ 0)' : `${deg.toFixed(1)}%`;
+                      })()}
                     </strong>
                   </span>
                 </div>
@@ -711,7 +903,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                     Execution-Drift Detectors
                   </h3>
                   <p class="text-[11px] text-slate-500">
-                    SL widening (&lt; -1.15R) &amp; post-loss revenge sizing
+                    SL widening (&gt;15% past SL) &amp; post-loss revenge sizing
                   </p>
                 </div>
                 <select
@@ -719,7 +911,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   value={String(props.revengeWindowMin)}
                   onChange={(e) => props.onRevengeWindowChange(Number(e.currentTarget.value))}
                   class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-blue-500"
-                  title="Time window after a loss to flag ≥1.25x size increases"
+                  title="Time window after a loss to flag ≥1.25× size increases"
                 >
                   <option value="30">30m window</option>
                   <option value="60">1h window</option>
@@ -729,7 +921,10 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
               </div>
 
               <div class="grid grid-cols-2 gap-2 text-xs">
-                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 space-y-1">
+                <div
+                  class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 space-y-1"
+                  title="SL-verified trades losing more than 1.15R or tagged 'Moved SL'"
+                >
                   <div class="text-[10px] uppercase text-slate-400 font-semibold">SL Widened</div>
                   <div
                     class={`text-lg font-extrabold ${
@@ -744,11 +939,17 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                     </span>
                   </div>
                   <div class="text-[10px] text-slate-500">
-                    Extra loss: -{audit().execution_drift.sl_widened_extra_r.toFixed(2)}R
+                    Extra loss beyond -1R:{' '}
+                    {audit().execution_drift.sl_widened_extra_r > 0
+                      ? `-${audit().execution_drift.sl_widened_extra_r.toFixed(2)}R`
+                      : '0.00R'}
                   </div>
                 </div>
 
-                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 space-y-1">
+                <div
+                  class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 space-y-1"
+                  title="Trades opened within the selected window after a loss with ≥1.25× volume/risk, or tagged Revenge / Oversized"
+                >
                   <div class="text-[10px] uppercase text-slate-400 font-semibold">
                     Revenge Sizing
                   </div>
@@ -765,8 +966,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                     </span>
                   </div>
                   <div class="text-[10px] text-slate-500">
-                    Net impact: {audit().execution_drift.revenge_net_r >= 0 ? '+' : ''}
-                    {audit().execution_drift.revenge_net_r.toFixed(2)}R
+                    Net impact: {formatSignedR(audit().execution_drift.revenge_net_r, 2)}
                   </div>
                 </div>
               </div>
@@ -782,7 +982,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   Process vs. Outcome Matrix
                 </h3>
                 <p class="text-[11px] text-slate-500">
-                  Separates disciplined execution from lucky gambles
+                  Classifies trades by journal mistake tags &amp; process grades
                 </p>
               </div>
 
@@ -791,6 +991,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   <div class="text-[10px] uppercase text-emerald-300 font-semibold">
                     Disciplined Win
                   </div>
+                  <div class="text-[10px] text-emerald-300/60">No mistakes · Win</div>
                   <div class="text-base font-bold text-emerald-200 mt-0.5">
                     {audit().process_matrix.disciplined_win.count}
                     <span class="text-[10px] font-normal text-emerald-300/80 ml-1">
@@ -798,7 +999,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                     </span>
                   </div>
                   <div class="text-[10px] text-emerald-300/80">
-                    +{audit().process_matrix.disciplined_win.net_r.toFixed(2)}R
+                    {formatSignedR(audit().process_matrix.disciplined_win.net_r, 2)}
                   </div>
                 </div>
 
@@ -806,6 +1007,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   <div class="text-[10px] uppercase text-blue-300 font-semibold">
                     Disciplined Loss
                   </div>
+                  <div class="text-[10px] text-blue-300/60">No mistakes · Loss</div>
                   <div class="text-base font-bold text-blue-200 mt-0.5">
                     {audit().process_matrix.disciplined_loss.count}
                     <span class="text-[10px] font-normal text-blue-300/80 ml-1">
@@ -813,7 +1015,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                     </span>
                   </div>
                   <div class="text-[10px] text-blue-300/80">
-                    {audit().process_matrix.disciplined_loss.net_r.toFixed(2)}R
+                    {formatSignedR(audit().process_matrix.disciplined_loss.net_r, 2)}
                   </div>
                 </div>
 
@@ -821,6 +1023,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   <div class="text-[10px] uppercase text-amber-300 font-semibold">
                     Lucky Gamble
                   </div>
+                  <div class="text-[10px] text-amber-300/60">Mistake/C-grade · Win</div>
                   <div class="text-base font-bold text-amber-200 mt-0.5">
                     {audit().process_matrix.lucky_gamble.count}
                     <span class="text-[10px] font-normal text-amber-300/80 ml-1">
@@ -828,7 +1031,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                     </span>
                   </div>
                   <div class="text-[10px] text-amber-300/80">
-                    +{audit().process_matrix.lucky_gamble.net_r.toFixed(2)}R
+                    {formatSignedR(audit().process_matrix.lucky_gamble.net_r, 2)}
                   </div>
                 </div>
 
@@ -836,6 +1039,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                   <div class="text-[10px] uppercase text-rose-300 font-semibold">
                     Self-Inflicted Loss
                   </div>
+                  <div class="text-[10px] text-rose-300/60">Mistake/C-grade · Loss</div>
                   <div class="text-base font-bold text-rose-200 mt-0.5">
                     {audit().process_matrix.self_inflicted_loss.count}
                     <span class="text-[10px] font-normal text-rose-300/80 ml-1">
@@ -843,7 +1047,7 @@ export const BenchmarkPanel: Component<BenchmarkPanelProps> = (props) => {
                     </span>
                   </div>
                   <div class="text-[10px] text-rose-300/80">
-                    {audit().process_matrix.self_inflicted_loss.net_r.toFixed(2)}R
+                    {formatSignedR(audit().process_matrix.self_inflicted_loss.net_r, 2)}
                   </div>
                 </div>
               </div>

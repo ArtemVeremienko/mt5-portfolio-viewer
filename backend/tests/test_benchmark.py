@@ -117,6 +117,17 @@ def test_fixed_horizon_excursions_uncapped_by_sl_tp() -> None:
     assert res["horizon_avg_mfe_r"] > 5.0
     assert res["horizon_edge_ratio"] > 5.0
 
+    # Zero-MAE trade -> horizon_edge_ratio should be None (infinite) instead of 0.0
+    zero_mae_bars = _make_bars(start_ts=1000, count=20, step_sec=300, start_price=1.1000, drift=0.0005, wick=0.0)
+    res_inf = compute_fixed_horizon_excursions(
+        trades=[trade],
+        candles_by_ticket={101: {"m5": zero_mae_bars}},
+        horizon_bars=10,
+        timeframe="m5",
+    )
+    assert res_inf["horizon_avg_mae_r"] == 0.0
+    assert res_inf["horizon_edge_ratio"] is None
+
 
 def test_monte_carlo_coin_flip_deterministic_and_costs() -> None:
     trades: list[dict[str, object]] = []

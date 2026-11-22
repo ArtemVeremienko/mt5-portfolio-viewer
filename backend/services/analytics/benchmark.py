@@ -130,7 +130,12 @@ def compute_fixed_horizon_excursions(
 
     avg_mfe = float(np.mean(mfe_rs))
     avg_mae = float(np.mean(mae_rs))
-    e_ratio = round(avg_mfe / avg_mae, 2) if avg_mae > 1e-9 else 0.0
+    if avg_mae > 1e-9:
+        e_ratio: float | None = round(avg_mfe / avg_mae, 2)
+    elif avg_mfe > 1e-9:
+        e_ratio = None
+    else:
+        e_ratio = 0.0
     return {
         "evaluated_trades": len(mfe_rs),
         "horizon_avg_mfe_r": round(avg_mfe, 2),
@@ -192,12 +197,12 @@ def compute_kelly_and_optimal_f(
     r_arr = np.array(r_multiples, dtype=np.float64)
     norm_returns = r_arr / worst_loss  # worst trade = -1.0
 
-    f_grid = np.linspace(0.01, 0.99, 99)
+    f_grid = np.linspace(0.04, 0.96, 24)
     best_f = 0.0
     best_twr = 1.0
     twr_curve: list[dict[str, float]] = []
 
-    for idx, f_val in enumerate(f_grid):
+    for f_val in f_grid:
         factors = 1.0 + f_val * norm_returns
         if np.any(factors <= 1e-9):
             twr = 0.0
@@ -208,8 +213,7 @@ def compute_kelly_and_optimal_f(
         if twr > best_twr:
             best_twr = twr
             best_f = float(f_val)
-        if idx % 3 == 0 or abs(f_val - best_f) < 0.01:
-            twr_curve.append({"f_pct": round(float(f_val) * 100.0, 1), "twr": round(twr, 3)})
+        twr_curve.append({"f_pct": round(float(f_val) * 100.0, 1), "twr": round(twr, 3)})
 
     # Equivalent risk % per 1R trade = (f* / worst_loss_R) * 100
     opt_f_risk_pct = (best_f / worst_loss) * 100.0
@@ -359,7 +363,12 @@ def run_coin_flip_monte_carlo(
     in_trade_mfes = [float(t["mfe_r"]) for t in eval_trades if t.get("mfe_r") is not None]
     avg_in_mae = float(np.mean(in_trade_maes)) if in_trade_maes else 0.0
     avg_in_mfe = float(np.mean(in_trade_mfes)) if in_trade_mfes else 0.0
-    in_trade_eratio = round(avg_in_mfe / avg_in_mae, 2) if avg_in_mae > 1e-9 else 0.0
+    if avg_in_mae > 1e-9:
+        in_trade_eratio: float | None = round(avg_in_mfe / avg_in_mae, 2)
+    elif avg_in_mfe > 1e-9:
+        in_trade_eratio = None
+    else:
+        in_trade_eratio = 0.0
 
     horizon_stats = compute_fixed_horizon_excursions(
         eval_trades, candles_by_ticket, horizon_bars=horizon_bars, timeframe=timeframe
@@ -369,6 +378,7 @@ def run_coin_flip_monte_carlo(
         return {
             "eligible_trades": 0,
             "total_trades": len(trades),
+            "skipped_trades": len(trades),
             "iterations": iterations,
             "horizon_bars": horizon_bars,
             "timeframe": timeframe,
@@ -535,8 +545,9 @@ def run_coin_flip_monte_carlo(
 
     wr_pct = float(np.mean(sim_win_rates <= actual_wr) * 100.0)
     net_r_pct = float(np.mean(sim_net_rs <= actual_net_r) * 100.0)
-    h_er = float(horizon_stats["horizon_edge_ratio"])
-    er_pct = float(np.mean(sim_eratios <= h_er) * 100.0)
+    raw_h_er = horizon_stats["horizon_edge_ratio"]
+    h_er_val = float(raw_h_er) if raw_h_er is not None else float("inf")
+    er_pct = float(np.mean(sim_eratios <= h_er_val) * 100.0)
     p_val_net_r = float(np.mean(sim_net_rs >= actual_net_r))
 
     # Build histogram bins for Net R
@@ -552,8 +563,10 @@ def run_coin_flip_monte_carlo(
 
     if n_eval < 30:
         verdict = "inconclusive"
-    elif p_val_net_r < 0.05 and h_er >= 1.25:
+    elif p_val_net_r < 0.05 and h_er_val >= 1.25:
         verdict = "significant_edge"
+    elif p_val_net_r < 0.05:
+        verdict = "mixed_signal"
     elif p_val_net_r < 0.10:
         verdict = "inconclusive"
     else:
@@ -562,6 +575,7 @@ def run_coin_flip_monte_carlo(
     return {
         "eligible_trades": n_eval,
         "total_trades": len(trades),
+        "skipped_trades": max(0, len(trades) - n_eval),
         "iterations": iterations,
         "horizon_bars": horizon_bars,
         "timeframe": timeframe,

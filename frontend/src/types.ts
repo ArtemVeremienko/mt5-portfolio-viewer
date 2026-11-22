@@ -451,7 +451,7 @@ export interface AuditStats {
     in_sample: OosSliceMetrics;
     out_of_sample: OosSliceMetrics;
     oos_survived: boolean;
-    degradation_pct: number;
+    degradation_pct: number | null;
     rolling_window_size: number;
     rolling_positive_pct: number;
     rolling_windows_count: number;
@@ -516,6 +516,7 @@ export interface BenchmarkTwrPoint {
 export interface BenchmarkResponse {
   eligible_trades: number;
   total_trades: number;
+  skipped_trades?: number;
   iterations: number;
   horizon_bars: number;
   timeframe: BenchmarkBarTf;
@@ -526,8 +527,8 @@ export interface BenchmarkResponse {
     win_rate: number;
     net_r: number;
     expectancy_r: number;
-    in_trade_edge_ratio: number;
-    horizon_edge_ratio: number;
+    in_trade_edge_ratio: number | null;
+    horizon_edge_ratio: number | null;
     horizon_avg_mfe_r: number;
     horizon_avg_mae_r: number;
     avg_rr: number;
@@ -561,5 +562,5 @@ export interface BenchmarkResponse {
     twr_curve: BenchmarkTwrPoint[];
   };
   histogram: BenchmarkHistogramBin[];
-  verdict: 'significant_edge' | 'inconclusive' | 'no_edge' | 'no_candle_data';
+  verdict: 'significant_edge' | 'mixed_signal' | 'inconclusive' | 'no_edge' | 'no_candle_data';
 }

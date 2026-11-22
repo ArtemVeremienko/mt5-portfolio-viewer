@@ -422,6 +422,7 @@ export const App: Component = () => {
           <BenchmarkPanel
             excursionStats={portfolioData()?.excursion_stats || null}
             auditStats={portfolioData()?.audit_stats || null}
+            activeLogin={activeLogin()}
             allAccounts={allAccountsMode()}
             symbol={filterSymbol()}
             direction={filterDirection()}

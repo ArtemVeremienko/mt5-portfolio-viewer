@@ -43,7 +43,7 @@ def compute_oos_survival(trade_deals: list[dict[str, Any]]) -> dict[str, Any]:
             "in_sample": _slice_metrics([]),
             "out_of_sample": _slice_metrics([]),
             "oos_survived": False,
-            "degradation_pct": 0.0,
+            "degradation_pct": None,
             "rolling_window_size": 30,
             "rolling_positive_pct": 0.0,
             "rolling_windows_count": 0,
@@ -59,8 +59,8 @@ def compute_oos_survival(trade_deals: list[dict[str, Any]]) -> dict[str, Any]:
 
     is_exp = float(is_m["expectancy_r"])
     oos_exp = float(oos_m["expectancy_r"])
-    degradation = (
-        round((is_exp - oos_exp) / abs(is_exp) * 100.0, 1) if abs(is_exp) > 1e-6 else 0.0
+    degradation: float | None = (
+        round((is_exp - oos_exp) / is_exp * 100.0, 1) if is_exp > 1e-6 else None
     )
 
     win_size = 30 if n >= 30 else 10
