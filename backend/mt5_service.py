@@ -84,5 +84,19 @@ class MT5Service:
             else []
         )
 
+    def calculate_order_profit(
+        self,
+        pos_type: int,
+        symbol: str,
+        volume: float,
+        open_price: float,
+        close_price: float,
+    ) -> float | None:
+        if self._live.is_connected():
+            return self._live.calculate_order_profit(
+                pos_type, symbol, volume, open_price, close_price
+            )
+        return None
+
 
 mt5_service = MT5Service()

@@ -11,6 +11,7 @@ from backend.domain.protocols import TradingGateway
 from backend.domain.risk import compute_1r_risk, is_valid_losing_sl
 from backend.infrastructure.mt5.gateway import LiveMT5Gateway
 from backend.infrastructure.mt5.simulator import SimulatedMT5Gateway
+from backend.mt5_service import MT5Service
 
 
 def test_pip_size_and_trade_pips() -> None:
@@ -58,6 +59,9 @@ def test_compute_1r_risk_with_valid_sl_and_fallback() -> None:
 
 def test_simulated_mt5_gateway_satisfies_protocol_and_is_deterministic() -> None:
     gateway: TradingGateway = SimulatedMT5Gateway()
+    assert isinstance(gateway, TradingGateway)
+    assert isinstance(LiveMT5Gateway(), TradingGateway)
+    assert isinstance(MT5Service(), TradingGateway)
     assert gateway.is_connected() is False
 
     acc = gateway.get_account_info()
