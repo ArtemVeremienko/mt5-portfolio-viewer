@@ -4,7 +4,7 @@ import type { CurvePoint } from '../types';
 export type ChartTimeframe = '7D' | '1M' | '3M' | 'YTD' | '1Y' | 'all';
 
 export function deduplicateByTime<T extends { time: UTCTimestamp }>(points: T[]): T[] {
-  const sorted = [...points].sort((a, b) => Number(a.time) - Number(b.time));
+  const sorted = points.toSorted((a, b) => Number(a.time) - Number(b.time));
   const out: T[] = [];
   for (const pt of sorted) {
     const prev = out[out.length - 1];

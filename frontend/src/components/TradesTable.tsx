@@ -1,12 +1,10 @@
-import { type Component, createMemo, createSignal, For, onMount, Show } from 'solid-js';
-import { Portal } from 'solid-js/web';
+import { type Component, createEffect, createMemo, createSignal, createUniqueId, For, onMount, Show } from 'solid-js';
 import type { TradeDeal, OpenPosition, MetricMode, TradeScope, CashflowItem, TradeGrade, ReviewTag, ReviewTagKind, MistakeCategory } from '../types';
 import { Search, History, Download, X, ArrowUpDown, Tag, SlidersHorizontal, RotateCcw, CandlestickChart, Pencil, Trash2, Check } from 'lucide-solid';
 import { getStorageItem, setStorageItem } from '../utils/storage';
 import { TradeChartGrid } from './TradeChartGrid';
 import { createTag, deleteTag as deleteTagApi, getTags, updateTag } from '../api/tags';
 import { saveTradeNote } from '../api/trades';
-import { useClickOutside } from '../primitives/useClickOutside';
 
 type HistoryColumnKey =
   | 'symbol'
@@ -197,8 +195,22 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     getStorageItem(VISIBLE_COLUMNS_STORAGE_KEY, DEFAULT_VISIBLE_COLUMNS, isValidColumnList)
   );
   const [showColumnsMenu, setShowColumnsMenu] = createSignal(false);
-  let columnsMenuRef: HTMLDivElement | undefined;
+  const columnsPopoverId = createUniqueId();
+  const tradeDialogTitleId = createUniqueId();
+  let tradeDialogRef: HTMLDialogElement | undefined;
   const pageSize = 20;
+
+  createEffect(() => {
+    if (editingTrade() && tradeDialogRef && !tradeDialogRef.open) {
+      tradeDialogRef.showModal();
+    }
+  });
+
+  createEffect(() => {
+    if (activeTab() !== 'history') {
+      setShowColumnsMenu(false);
+    }
+  });
 
   const isColVisible = (key: HistoryColumnKey) => visibleColumns().includes(key);
 
@@ -229,12 +241,6 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
       console.error('Failed to load review tags:', e);
     }
   };
-
-  useClickOutside(
-    () => columnsMenuRef,
-    showColumnsMenu,
-    () => setShowColumnsMenu(false)
-  );
 
   onMount(() => {
     if (props.openTrades.length > 0) {
@@ -462,7 +468,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
 
     const col = sortBy();
     const dir = sortDir() === 'asc' ? 1 : -1;
-    return [...list].sort((a, b) => {
+    return list.toSorted((a, b) => {
       let va = 0;
       let vb = 0;
       if (col === 'time') { va = a.time; vb = b.time; }
@@ -723,9 +729,10 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
           </div>
 
           <Show when={activeTab() === 'history'}>
-            <div class="relative" ref={(el) => { columnsMenuRef = el; }}>
+            <div>
               <button
-                onClick={() => setShowColumnsMenu((v) => !v)}
+                type="button"
+                {...({ popovertarget: columnsPopoverId } as Record<string, string>)}
                 class={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
                   showColumnsMenu()
                     ? 'bg-blue-600/20 text-blue-300 border-blue-500/40'
@@ -740,49 +747,53 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                 </span>
               </button>
 
-              <Show when={showColumnsMenu()}>
-                <div class="absolute right-0 mt-1.5 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2.5 z-50">
-                  <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                    <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">
-                      Columns
-                    </span>
-                    <button
-                      onClick={resetColumns}
-                      class="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 font-medium"
-                      title="Restore default visible columns"
-                    >
-                      <RotateCcw size={11} />
-                      <span>Reset to Default</span>
-                    </button>
-                  </div>
-                  <div class="max-h-64 overflow-y-auto space-y-1 pr-1">
-                    <For each={HISTORY_COLUMNS}>
-                      {(col) => {
-                        const checked = () => isColVisible(col.key);
-                        const isLastVisible = () => checked() && visibleColumns().length <= 1;
-                        return (
-                          <label
-                            class={`flex items-center justify-between px-2 py-1 rounded-lg text-xs cursor-pointer transition-colors ${
-                              isLastVisible()
-                                ? 'opacity-60 cursor-not-allowed'
-                                : 'hover:bg-slate-800/80 text-slate-200'
-                            }`}
-                          >
-                            <span>{col.label}</span>
-                            <input
-                              type="checkbox"
-                              checked={checked()}
-                              disabled={isLastVisible()}
-                              onChange={() => toggleColumn(col.key)}
-                              class="accent-blue-500 rounded cursor-pointer"
-                            />
-                          </label>
-                        );
-                      }}
-                    </For>
-                  </div>
+              <div
+                id={columnsPopoverId}
+                popover="auto"
+                onToggle={(e) => setShowColumnsMenu(e.newState === 'open')}
+                class="columns-popover w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2.5 text-slate-200"
+              >
+                <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                    Columns
+                  </span>
+                  <button
+                    type="button"
+                    onClick={resetColumns}
+                    class="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 font-medium"
+                    title="Restore default visible columns"
+                  >
+                    <RotateCcw size={11} />
+                    <span>Reset to Default</span>
+                  </button>
                 </div>
-              </Show>
+                <div class="max-h-64 overflow-y-auto space-y-1 pr-1">
+                  <For each={HISTORY_COLUMNS}>
+                    {(col) => {
+                      const checked = () => isColVisible(col.key);
+                      const isLastVisible = () => checked() && visibleColumns().length <= 1;
+                      return (
+                        <label
+                          class={`flex items-center justify-between px-2 py-1 rounded-lg text-xs cursor-pointer transition-colors ${
+                            isLastVisible()
+                              ? 'opacity-60 cursor-not-allowed'
+                              : 'hover:bg-slate-800/80 text-slate-200'
+                          }`}
+                        >
+                          <span>{col.label}</span>
+                          <input
+                            type="checkbox"
+                            checked={checked()}
+                            disabled={isLastVisible()}
+                            onChange={() => toggleColumn(col.key)}
+                            class="accent-blue-500 rounded cursor-pointer"
+                          />
+                        </label>
+                      );
+                    }}
+                  </For>
+                </div>
+              </div>
             </div>
 
             <button
@@ -1331,6 +1342,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                                     onInput={(e) => setEditTagName(e.currentTarget.value)}
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
+                                        if (e.isComposing || e.keyCode === 229) return;
                                         e.preventDefault();
                                         saveTagEdit(lt());
                                       } else if (e.key === 'Escape') {
@@ -1413,20 +1425,25 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
         </div>
       </Show>
 
-      {/* Trade Journal & MTF Chart Modal (Portal ensures true viewport centering) */}
+      {/* Trade Journal & MTF Chart Modal */}
       <Show when={editingTrade()}>
         {(t) => (
-          <Portal>
-            <div class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-              <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-7xl max-h-[92vh] overflow-y-auto shadow-2xl space-y-4">
+          <dialog
+            ref={(el) => { tradeDialogRef = el; }}
+            aria-labelledby={tradeDialogTitleId}
+            {...({ closedby: 'any' } as Record<string, string>)}
+            onClose={() => setEditingTrade(null)}
+            class="m-auto p-0 bg-transparent border-0 w-[calc(100%-2rem)] max-w-7xl backdrop:bg-black/75 backdrop:backdrop-blur-sm"
+          >
+            <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-h-[92vh] overflow-y-auto shadow-2xl space-y-4">
               <div class="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div>
-                  <h4 class="text-sm font-bold text-white">Trade Review &amp; Journal — #{t().ticket}</h4>
+                  <h1 id={tradeDialogTitleId} class="text-sm font-bold text-white">Trade Review &amp; Journal — #{t().ticket}</h1>
                   <p class="text-[11px] text-slate-400 font-mono">
                     {t().symbol} • {t().type === 0 ? 'BUY' : 'SELL'} • {t().volume.toFixed(2)} lots • Entry {t().open_price} → Exit {t().price} • {t().r_multiple >= 0 ? '+' : ''}{t().r_multiple.toFixed(2)}R
                   </p>
                 </div>
-                <button onClick={() => setEditingTrade(null)} class="text-slate-400 hover:text-white">
+                <button type="button" onClick={() => tradeDialogRef?.close()} aria-label="Close" class="text-slate-400 hover:text-white">
                   <X size={16} />
                 </button>
               </div>
@@ -1499,9 +1516,11 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                                 onInput={(e) => setEditTagName(e.currentTarget.value)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
+                                    if (e.isComposing || e.keyCode === 229) return;
                                     e.preventDefault();
                                     saveTagEdit(lt());
                                   } else if (e.key === 'Escape') {
+                                    e.preventDefault();
                                     cancelEditingTag();
                                   }
                                 }}
@@ -1722,6 +1741,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                             onInput={(e) => setCustomMistakeInput(e.currentTarget.value)}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
+                                if (e.isComposing || e.keyCode === 229) return;
                                 e.preventDefault();
                                 addCustomMistakeTag();
                               }
@@ -1778,12 +1798,14 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
               </div>
               <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
-                  onClick={() => setEditingTrade(null)}
+                  type="button"
+                  onClick={() => tradeDialogRef?.close()}
                   class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={saveNote}
                   disabled={savingNote()}
                   class="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold disabled:opacity-50"
@@ -1792,8 +1814,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                 </button>
               </div>
             </div>
-            </div>
-          </Portal>
+          </dialog>
         )}
       </Show>
 

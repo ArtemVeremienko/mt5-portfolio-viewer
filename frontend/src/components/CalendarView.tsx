@@ -1,5 +1,4 @@
-import { type Component, createMemo, createSignal, For, Show } from 'solid-js';
-import { Portal } from 'solid-js/web';
+import { type Component, createEffect, createMemo, createSignal, createUniqueId, For, Show } from 'solid-js';
 import type { CalendarDay, MetricMode, TradeDeal } from '../types';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, ArrowUpRight, ArrowDownRight } from 'lucide-solid';
 
@@ -16,6 +15,14 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
   const [currentYear, setCurrentYear] = createSignal<number>(today.getFullYear());
   const [currentMonth, setCurrentMonth] = createSignal<number>(today.getMonth()); // 0-indexed
   const [selectedDay, setSelectedDay] = createSignal<CalendarDay | null>(null);
+  const dialogTitleId = createUniqueId();
+  let dayDialogRef: HTMLDialogElement | undefined;
+
+  createEffect(() => {
+    if (selectedDay() && dayDialogRef && !dayDialogRef.open) {
+      dayDialogRef.showModal();
+    }
+  });
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -271,11 +278,16 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
         </div>
       </div>
 
-      {/* Trade Drill-down Modal / Drawer on Day Click */}
+      {/* Trade Drill-down Modal on Day Click */}
       <Show when={selectedDay()}>
-        <Portal>
-        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-          <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+        <dialog
+          ref={(el) => { dayDialogRef = el; }}
+          aria-labelledby={dialogTitleId}
+          {...({ closedby: 'any' } as Record<string, string>)}
+          onClose={() => setSelectedDay(null)}
+          class="m-auto p-0 bg-transparent border-0 w-[calc(100%-2rem)] max-w-2xl backdrop:bg-black/75 backdrop:backdrop-blur-sm"
+        >
+          <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
             <div class="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/60">
               <div class="flex items-center gap-3">
@@ -287,14 +299,14 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
                   <CalendarIcon size={18} />
                 </div>
                 <div>
-                  <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                  <h1 id={dialogTitleId} class="text-sm font-bold text-white flex items-center gap-2">
                     Trades on {selectedDay()?.date}
                     <span class={`text-xs px-2 py-0.5 rounded-full font-mono ${
                       (selectedDay()?.profit || 0) >= 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
                     }`}>
                       {formatProfit(selectedDay()?.profit || 0, selectedDay()?.r || 0)}
                     </span>
-                  </h4>
+                  </h1>
                   <p class="text-xs text-slate-400">
                     {selectedDay()?.trades} closed {selectedDay()?.trades === 1 ? 'trade' : 'trades'} · {selectedDay()?.won} Won, {selectedDay()?.lost} Lost ({selectedDay()?.win_rate}%)
                   </p>
@@ -302,9 +314,11 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
               </div>
 
               <button
-                onClick={() => setSelectedDay(null)}
+                type="button"
+                onClick={() => dayDialogRef?.close()}
                 class="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
                 title="Close"
+                aria-label="Close"
               >
                 <X size={18} />
               </button>
@@ -356,9 +370,10 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
             <div class="p-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end gap-2">
               <Show when={props.onFilterByDate && selectedDay()?.date}>
                 <button
+                  type="button"
                   onClick={() => {
                     const d = selectedDay()?.date;
-                    setSelectedDay(null);
+                    dayDialogRef?.close();
                     if (d) props.onFilterByDate?.(d);
                   }}
                   class="px-4 py-1.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors"
@@ -367,15 +382,15 @@ export const CalendarView: Component<CalendarViewProps> = (props) => {
                 </button>
               </Show>
               <button
-                onClick={() => setSelectedDay(null)}
+                type="button"
+                onClick={() => dayDialogRef?.close()}
                 class="px-4 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white transition-colors"
               >
                 Done
               </button>
             </div>
           </div>
-        </div>
-        </Portal>
+        </dialog>
       </Show>
     </div>
   );

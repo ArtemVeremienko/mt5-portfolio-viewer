@@ -15,17 +15,57 @@ body {
 }
 
 /* Custom Scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+:root {
+  --scrollbar-thumb: var(--border-strong);
+  --scrollbar-track: #0f172a;
 }
-::-webkit-scrollbar-track {
-  background: #0f172a;
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
-::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 3px;
+
+@supports not (scrollbar-color: auto) {
+  * {
+    scrollbar-width: auto;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--chart-crosshair);
+  }
 }
-::-webkit-scrollbar-thumb:hover {
-  background: var(--chart-crosshair);
+
+/* Native Modal Dialog Scroll Containment */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Viewport-Aware Columns Popover (CSS Anchor Positioning progressive enhancement) */
+@supports (position-area: block-end) {
+  [popover].columns-popover {
+    inset: auto;
+    margin: 0;
+    margin-block-start: 0.375rem;
+    position-area: block-end span-inline-start;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  }
 }

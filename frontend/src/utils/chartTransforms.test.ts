@@ -37,4 +37,15 @@ describe('chartTransforms', () => {
     expect(sliceCurvesByTimeframe(curves, '7D').length).toBe(1);
     expect(sliceCurvesByTimeframe(curves, '1M').length).toBe(2);
   });
+
+  it('does not mutate input array and handles empty input in deduplicateByTime', () => {
+    expect(deduplicateByTime([])).toEqual([]);
+    const pts = Object.freeze([
+      { time: 200 as unknown as import('lightweight-charts').UTCTimestamp, value: 2 },
+      { time: 100 as unknown as import('lightweight-charts').UTCTimestamp, value: 1 },
+    ]) as Array<{ time: import('lightweight-charts').UTCTimestamp; value: number }>;
+    const deduped = deduplicateByTime(pts);
+    expect(deduped.map((p) => p.time)).toEqual([100, 200]);
+    expect(pts.map((p) => p.time)).toEqual([200, 100]);
+  });
 });

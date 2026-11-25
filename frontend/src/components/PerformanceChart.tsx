@@ -285,7 +285,7 @@ export const PerformanceChart: Component<PerformanceChartProps> = (props) => {
     } else if (tf === '1Y') data = data.filter(d => d.timestamp >= now - 365 * 86400);
 
     // Ensure strictly ascending timestamps for Lightweight Charts without dropping same-second trades
-    const rawSorted = [...data].sort((a, b) => a.timestamp - b.timestamp);
+    const rawSorted = data.toSorted((a, b) => a.timestamp - b.timestamp);
     const sortedData: CurvePoint[] = [];
     let lastTs = -Infinity;
     for (const pt of rawSorted) {
