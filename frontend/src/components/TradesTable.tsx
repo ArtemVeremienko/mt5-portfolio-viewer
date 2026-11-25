@@ -191,6 +191,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
   const [executionGrade, setExecutionGrade] = createSignal<TradeGrade>('');
   const [managementGrade, setManagementGrade] = createSignal<TradeGrade>('');
   const [initialSlInput, setInitialSlInput] = createSignal('');
+  const [initialSlOpen, setInitialSlOpen] = createSignal(false);
   const [savingNote, setSavingNote] = createSignal(false);
   const [visibleColumns, setVisibleColumns] = createSignal<HistoryColumnKey[]>(
     getStorageItem(VISIBLE_COLUMNS_STORAGE_KEY, DEFAULT_VISIBLE_COLUMNS, isValidColumnList)
@@ -394,7 +395,9 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     setEntryGrade(t.entry_grade || '');
     setExecutionGrade(t.execution_grade || '');
     setManagementGrade(t.management_grade || '');
-    setInitialSlInput(t.initial_sl != null && t.initial_sl > 0 ? String(t.initial_sl) : '');
+    const hasManualSl = t.initial_sl != null && t.initial_sl > 0;
+    setInitialSlInput(hasManualSl ? String(t.initial_sl) : '');
+    setInitialSlOpen(hasManualSl);
   };
 
   const initialSlValidation = createMemo(() => {
@@ -1521,54 +1524,6 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                   <TradeChartGrid trade={t()} />
                 </div>
                 <div class="lg:col-span-4 space-y-3 text-xs">
-                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-2">
-                  <div class="flex items-center justify-between">
-                    <label for="initial-sl-input" class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                      Initial Stop Loss (1R)
-                    </label>
-                    <Show when={initialSlInput().trim().length > 0}>
-                      <button
-                        type="button"
-                        onClick={() => setInitialSlInput('')}
-                        class="text-[10px] text-amber-400 hover:text-amber-300"
-                      >
-                        Reset to MT5 SL
-                      </button>
-                    </Show>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <input
-                      id="initial-sl-input"
-                      type="number"
-                      step="any"
-                      placeholder={t().sl > 0 ? `MT5 final SL: ${t().sl}` : 'Enter initial SL price...'}
-                      value={initialSlInput()}
-                      onInput={(e) => setInitialSlInput(e.currentTarget.value)}
-                      class={`flex-1 bg-slate-900 border rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs focus:outline-none ${
-                        initialSlValidation().error
-                          ? 'border-rose-500 focus:border-rose-400'
-                          : 'border-slate-800 focus:border-amber-500'
-                      }`}
-                    />
-                  </div>
-                  <Show when={initialSlValidation().error}>
-                    {(err) => <p class="text-[10px] text-rose-400">{err()}</p>}
-                  </Show>
-                  <Show
-                    when={initialSlPreview()}
-                    fallback={
-                      <p class="text-[10px] text-slate-500 font-mono">
-                        Current 1R: ${(t().risk_r || 0).toFixed(2)} ({t().risk_source === 'manual_sl' ? 'Manual SL' : t().risk_source === 'sl' ? `MT5 SL ${t().sl}` : '1% Model'})
-                      </p>
-                    }
-                  >
-                    {(prev) => (
-                      <p class="text-[10px] text-amber-300 font-mono">
-                        Est. 1R: ${prev().est1r.toFixed(2)} • Est. R: {prev().estR >= 0 ? '+' : ''}{prev().estR.toFixed(2)}R
-                      </p>
-                    )}
-                  </Show>
-                </div>
                 <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-2.5">
                   <div class="flex items-center justify-between">
                     <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Trade Grading</span>
@@ -1910,6 +1865,72 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                     onInput={(e) => setNoteText(e.currentTarget.value)}
                     class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-blue-500"
                   />
+                </div>
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl overflow-hidden">
+                  <button
+                    type="button"
+                    aria-expanded={initialSlOpen()}
+                    onClick={() => setInitialSlOpen(!initialSlOpen())}
+                    class="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-slate-900/60 transition-colors"
+                  >
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      <Show when={initialSlInput().trim().length > 0}>
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      </Show>
+                      <span>Initial SL Override (1R)</span>
+                    </span>
+                    <span class="text-[10px] font-mono text-slate-500">
+                      {initialSlOpen() ? 'Hide' : `$${(t().risk_r || 0).toFixed(2)} ▾`}
+                    </span>
+                  </button>
+                  <Show when={initialSlOpen()}>
+                    <div class="px-3 pb-3 pt-1 space-y-2 border-t border-slate-800/70">
+                      <div class="flex items-center justify-between">
+                        <label for="initial-sl-input" class="text-[10px] text-slate-400">
+                          Initial Stop Loss Price
+                        </label>
+                        <Show when={initialSlInput().trim().length > 0}>
+                          <button
+                            type="button"
+                            onClick={() => setInitialSlInput('')}
+                            class="text-[10px] text-amber-400 hover:text-amber-300"
+                          >
+                            Reset to MT5 SL
+                          </button>
+                        </Show>
+                      </div>
+                      <input
+                        id="initial-sl-input"
+                        type="number"
+                        step="any"
+                        placeholder={t().sl > 0 ? `MT5 final SL: ${t().sl}` : 'Enter initial SL price...'}
+                        value={initialSlInput()}
+                        onInput={(e) => setInitialSlInput(e.currentTarget.value)}
+                        class={`w-full bg-slate-900 border rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs focus:outline-none ${
+                          initialSlValidation().error
+                            ? 'border-rose-500 focus:border-rose-400'
+                            : 'border-slate-800 focus:border-amber-500'
+                        }`}
+                      />
+                      <Show when={initialSlValidation().error}>
+                        {(err) => <p class="text-[10px] text-rose-400">{err()}</p>}
+                      </Show>
+                      <Show
+                        when={initialSlPreview()}
+                        fallback={
+                          <p class="text-[10px] text-slate-500 font-mono">
+                            Current 1R: ${(t().risk_r || 0).toFixed(2)} ({t().risk_source === 'manual_sl' ? 'Manual SL' : t().risk_source === 'sl' ? `MT5 SL ${t().sl}` : '1% Model'})
+                          </p>
+                        }
+                      >
+                        {(prev) => (
+                          <p class="text-[10px] text-amber-300 font-mono">
+                            Est. 1R: ${prev().est1r.toFixed(2)} • Est. R: {prev().estR >= 0 ? '+' : ''}{prev().estR.toFixed(2)}R
+                          </p>
+                        )}
+                      </Show>
+                    </div>
+                  </Show>
                 </div>
               </div>
               </div>

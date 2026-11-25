@@ -245,6 +245,19 @@ describe('TradesTable modern web interactions', () => {
     await Promise.resolve();
 
     const dialog = container.querySelector('dialog') as HTMLDialogElement;
+    // Collapsed by default when no manual initial_sl is set
+    expect(dialog.querySelector('#initial-sl-input')).toBeNull();
+    const toggleBtn = Array.from(dialog.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Initial SL Override (1R)')
+    ) as HTMLButtonElement;
+    expect(toggleBtn).toBeDefined();
+    expect(toggleBtn.getAttribute('aria-expanded')).toBe('false');
+
+    // Expand section
+    toggleBtn.click();
+    await Promise.resolve();
+    expect(toggleBtn.getAttribute('aria-expanded')).toBe('true');
+
     const slInput = dialog.querySelector('#initial-sl-input') as HTMLInputElement;
     const saveBtn = Array.from(dialog.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === 'Save Note'
