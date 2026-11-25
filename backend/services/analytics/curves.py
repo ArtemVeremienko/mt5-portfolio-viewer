@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backend.domain.pips import calculate_trade_pips
-from backend.domain.risk import compute_1r_risk
+from backend.domain.risk import compute_1r_risk, is_valid_losing_sl
 from backend.services.analytics.filters import format_duration
 
 
@@ -39,6 +39,7 @@ def build_curves_and_trades(
     default_risk_pct: float,
     is_unfiltered: bool,
     end_time: int | None,
+    notes_map: dict[int, dict[str, Any]] | None = None,
 ) -> CurveState:
     """Enrich closed trades with 1R/pips/duration and build TWR equity/balance curves."""
     running_balance = scope_starting_balance
@@ -84,7 +85,32 @@ def build_curves_and_trades(
                 total_comm_deal = commission + matched_in_comm
                 net_trade_profit = profit + swap + total_comm_deal
 
-                risk_1r = compute_1r_risk(d, max(1.0, running_balance), default_risk_pct)
+                open_p = float(d.get("open_price", 0.0) or d.get("price", 0.0) or 0.0)
+                sl_p = float(d.get("sl", 0.0) or 0.0)
+                ticket_id = int(d.get("ticket", 0) or 0)
+                note_obj = (notes_map or {}).get(ticket_id)
+                raw_manual_sl = note_obj.get("initial_sl") if note_obj else None
+                manual_sl = float(raw_manual_sl) if raw_manual_sl is not None else 0.0
+                has_manual_sl = is_valid_losing_sl(dtype, open_p, manual_sl)
+
+                if has_manual_sl:
+                    cached_init_risk = (
+                        float(note_obj.get("initial_risk_r") or 0.0) if note_obj else 0.0
+                    )
+                    risk_deal = dict(d)
+                    risk_deal["sl"] = manual_sl
+                    risk_deal["risk_r"] = cached_init_risk if cached_init_risk > 0.01 else 0.0
+                    risk_1r = compute_1r_risk(
+                        risk_deal, max(1.0, running_balance), default_risk_pct
+                    )
+                    risk_source = "manual_sl"
+                    sl_diff_pts = round(abs(open_p - manual_sl), 5)
+                else:
+                    risk_1r = compute_1r_risk(d, max(1.0, running_balance), default_risk_pct)
+                    has_initial_sl = is_valid_losing_sl(dtype, open_p, sl_p)
+                    risk_source = "sl" if has_initial_sl else "balance_pct"
+                    sl_diff_pts = round(abs(open_p - sl_p), 5) if has_initial_sl else 0.0
+
                 r_mult = round(net_trade_profit / risk_1r, 3) if risk_1r > 0 else 0.0
 
                 mae_amt = float(d.get("mae_amount", 0.0) or 0.0)
@@ -102,15 +128,6 @@ def build_curves_and_trades(
                     else float(d.get("mfe_r", 0.0) or 0.0)
                 )
 
-                open_p = float(d.get("open_price", 0.0) or d.get("price", 0.0) or 0.0)
-                sl_p = float(d.get("sl", 0.0) or 0.0)
-                has_initial_sl = sl_p > 0 and open_p > 0 and (
-                    (dtype == 0 and sl_p < open_p - 1e-5)
-                    or (dtype == 1 and sl_p > open_p + 1e-5)
-                )
-                risk_source = "sl" if has_initial_sl else "balance_pct"
-                sl_diff_pts = round(abs(open_p - sl_p), 5) if has_initial_sl else 0.0
-
                 deal_record = dict(d)
                 deal_record["commission"] = round(total_comm_deal, 2)
                 deal_record["net_profit"] = net_trade_profit
@@ -118,6 +135,7 @@ def build_curves_and_trades(
                 deal_record["r_multiple"] = r_mult
                 deal_record["risk_source"] = risk_source
                 deal_record["sl_diff_pts"] = sl_diff_pts
+                deal_record["initial_sl"] = manual_sl if has_manual_sl else None
                 deal_record["mae_amount"] = mae_amt
                 deal_record["mfe_amount"] = mfe_amt
                 deal_record["mae_pips"] = mae_pips

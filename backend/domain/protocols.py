@@ -27,3 +27,11 @@ class TradingGateway(Protocol):
         from_ts: int,
         to_ts: int,
     ) -> list[dict[str, Any]]: ...
+    def calculate_order_profit(
+        self,
+        pos_type: int,
+        symbol: str,
+        volume: float,
+        open_price: float,
+        close_price: float,
+    ) -> float | None: ...

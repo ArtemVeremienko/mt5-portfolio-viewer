@@ -230,7 +230,8 @@ class JournalRepository:
         rows = self._conn.execute(
             """
             SELECT ticket, note, setup_tag, mistake_tag, exit_tag,
-                   entry_grade, execution_grade, management_grade, updated_at
+                   entry_grade, execution_grade, management_grade,
+                   initial_sl, initial_risk_r, updated_at
             FROM trade_notes
             WHERE account_id = ?
             """,
@@ -242,7 +243,8 @@ class JournalRepository:
         rows = self._conn.execute(
             """
             SELECT ticket, note, setup_tag, mistake_tag, exit_tag,
-                   entry_grade, execution_grade, management_grade, updated_at
+                   entry_grade, execution_grade, management_grade,
+                   initial_sl, initial_risk_r, updated_at
             FROM trade_notes
             """
         ).fetchall()
@@ -255,7 +257,8 @@ class JournalRepository:
         rows = self._conn.execute(
             f"""
             SELECT ticket, note, setup_tag, mistake_tag, exit_tag,
-                   entry_grade, execution_grade, management_grade, updated_at
+                   entry_grade, execution_grade, management_grade,
+                   initial_sl, initial_risk_r, updated_at
             FROM trade_notes
             WHERE account_id IN ({placeholders})
             """,
@@ -274,6 +277,8 @@ class JournalRepository:
         entry_grade: str = "",
         execution_grade: str = "",
         management_grade: str = "",
+        initial_sl: float | None = None,
+        initial_risk_r: float | None = None,
         updated_at: int = 0,
     ) -> None:
         cursor = self._conn.cursor()
@@ -286,9 +291,10 @@ class JournalRepository:
             """
             INSERT INTO trade_notes (
                 ticket, account_id, note, setup_tag, mistake_tag, exit_tag,
-                entry_grade, execution_grade, management_grade, updated_at
+                entry_grade, execution_grade, management_grade,
+                initial_sl, initial_risk_r, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticket) DO UPDATE SET
                 account_id=excluded.account_id,
                 note=excluded.note,
@@ -298,6 +304,8 @@ class JournalRepository:
                 entry_grade=excluded.entry_grade,
                 execution_grade=excluded.execution_grade,
                 management_grade=excluded.management_grade,
+                initial_sl=excluded.initial_sl,
+                initial_risk_r=excluded.initial_risk_r,
                 updated_at=excluded.updated_at
             """,
             (
@@ -310,6 +318,8 @@ class JournalRepository:
                 entry_grade,
                 execution_grade,
                 management_grade,
+                initial_sl,
+                initial_risk_r,
                 updated_at,
             ),
         )

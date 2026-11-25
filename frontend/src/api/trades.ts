@@ -27,6 +27,7 @@ export interface SaveTradeNotePayload {
   entry_grade: string;
   execution_grade: string;
   management_grade: string;
+  initial_sl?: number | null;
 }
 
 export function getTradeCandles(

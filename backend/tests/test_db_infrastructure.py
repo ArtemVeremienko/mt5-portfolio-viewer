@@ -100,7 +100,10 @@ def test_run_migrations_creates_schema_indexes_and_normalizes_tags(tmp_path: Pat
         # Idempotent re-run
         run_migrations(conn)
         assert conn.execute("PRAGMA user_version;").fetchone()[0] == LATEST_SCHEMA_VERSION
-        assert LATEST_SCHEMA_VERSION == 5
+        assert LATEST_SCHEMA_VERSION == 6
+        note_cols = {r[1] for r in conn.execute("PRAGMA table_info(trade_notes)").fetchall()}
+        assert "initial_sl" in note_cols
+        assert "initial_risk_r" in note_cols
 
         # Verify setup & exit tags were also normalized into trade_note_tags
         assert ("setup", "London Breakout") in linked_pairs

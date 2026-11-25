@@ -220,6 +220,7 @@ def process_portfolio_analytics(
         default_risk_pct=default_risk_pct,
         is_unfiltered=is_unfiltered,
         end_time=end_time,
+        notes_map=notes_map,
     )
     trade_deals = cstate.trade_deals
 
@@ -272,7 +273,7 @@ def process_portfolio_analytics(
     for td in trade_deals:
         if float(td.get("risk_r", 0.0) or 0.0) > 0:
             risk_1r_values.append(float(td["risk_r"]))
-        if td.get("risk_source") == "sl":
+        if td.get("risk_source") in ("sl", "manual_sl"):
             sl_verified_count += 1
         else:
             sl_estimated_count += 1

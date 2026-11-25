@@ -72,6 +72,7 @@ function detectPriceFormat(bars: OhlcBar[], trade: TradeDeal): { type: 'price'; 
   check(trade.open_price);
   check(trade.price);
   check(trade.sl);
+  check(trade.initial_sl || 0);
   check(trade.tp);
   for (const b of bars) {
     check(b.open);
@@ -273,7 +274,27 @@ const CandlePane: Component<CandlePaneProps> = (props) => {
       });
     }
 
-    if (t.sl > 0) {
+    const hasInitialSl = t.initial_sl != null && t.initial_sl > 0;
+    if (hasInitialSl) {
+      candleSeries.createPriceLine({
+        price: t.initial_sl as number,
+        color: '#f59e0b',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: false,
+        title: 'Init SL',
+      });
+      if (t.sl > 0 && Math.abs(t.sl - (t.initial_sl as number)) > 1e-6) {
+        candleSeries.createPriceLine({
+          price: t.sl,
+          color: '#fb7185',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: false,
+          title: 'Final SL',
+        });
+      }
+    } else if (t.sl > 0) {
       candleSeries.createPriceLine({
         price: t.sl,
         color: '#fb7185',
@@ -341,9 +362,10 @@ const CandlePane: Component<CandlePaneProps> = (props) => {
   });
 
   createEffect(() => {
-    // Track bars and ticket
+    // Track bars, ticket, and manual initial_sl override
     void props.bars;
     void props.trade.ticket;
+    void props.trade.initial_sl;
     queueMicrotask(() => renderChart());
   });
 

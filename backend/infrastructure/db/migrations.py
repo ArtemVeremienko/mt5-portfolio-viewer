@@ -4,7 +4,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 
-LATEST_SCHEMA_VERSION = 5
+LATEST_SCHEMA_VERSION = 6
 
 VALID_TAG_KINDS = frozenset({"setup", "exit", "mistake"})
 VALID_MISTAKE_CATEGORIES = frozenset({"entry", "exit_mgmt"})
@@ -415,12 +415,24 @@ def _migrate_v5(cursor: sqlite3.Cursor) -> None:
     )
 
 
+def _migrate_v6(cursor: sqlite3.Cursor) -> None:
+    """Add manual initial_sl and cached initial_risk_r override columns to trade_notes."""
+    note_cols = {
+        row[1] for row in cursor.execute("PRAGMA table_info(trade_notes)").fetchall()
+    }
+    if "initial_sl" not in note_cols:
+        cursor.execute("ALTER TABLE trade_notes ADD COLUMN initial_sl REAL DEFAULT NULL")
+    if "initial_risk_r" not in note_cols:
+        cursor.execute("ALTER TABLE trade_notes ADD COLUMN initial_risk_r REAL DEFAULT NULL")
+
+
 _MIGRATIONS: tuple[tuple[int, Callable[[sqlite3.Cursor], None]], ...] = (
     (1, _migrate_v1),
     (2, _migrate_v2),
     (3, _migrate_v3),
     (4, _migrate_v4),
     (5, _migrate_v5),
+    (6, _migrate_v6),
 )
 
 

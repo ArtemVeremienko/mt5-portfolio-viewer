@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import random
 import re
 import time
 from datetime import UTC, datetime, timedelta
@@ -30,7 +29,23 @@ class LiveMT5Gateway:
     def __init__(self) -> None:
         self.connected = False
         self.active_account_id: int | None = None
-        self._rng = random.Random(42)
+
+    def calculate_order_profit(
+        self,
+        pos_type: int,
+        symbol: str,
+        volume: float,
+        open_price: float,
+        close_price: float,
+    ) -> float | None:
+        """Calculate exact profit/loss in account currency via MT5 when connected."""
+        if not self.is_connected() or not symbol or volume <= 0 or open_price <= 0 or close_price <= 0:
+            return None
+        try:
+            return _mt5_profit_calc(pos_type, symbol, volume, open_price, close_price)
+        except Exception as exc:
+            logger.warning("Error calculating MT5 order profit for %s: %s", symbol, exc)
+            return None
 
     def initialize_mt5(self) -> bool:
         """Attempt to initialize connection to the local MT5 terminal."""
@@ -127,39 +142,87 @@ class LiveMT5Gateway:
         close_price: float,
         net_profit: float,
         volume: float,
+        open_time_msc: int | None = None,
+        close_time_msc: int | None = None,
     ) -> tuple[float, float, float, float, float, float]:
-        """Calculate MAE and MFE (price distance, pips, and currency amount)."""
+        """Calculate MAE and MFE (price distance, pips, and currency amount).
+
+        Primary source: exact millisecond tick history via mt5.copy_ticks_range
+        (Bid for BUY positions, Ask for SELL positions).
+        Fallback when broker ticks are unavailable: strictly interior M1 candles
+        (excluding opening/closing boundary minutes that leak pre-entry or
+        post-exit price action) combined with the actual execution close_price.
+        """
         if not symbol or open_price <= 0:
             return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-        mae_price = 0.0
-        mfe_price = 0.0
+        start_msc = int(open_time_msc) if open_time_msc and open_time_msc > 0 else int(open_time) * 1000
+        end_msc = int(close_time_msc) if close_time_msc and close_time_msc > 0 else int(close_time) * 1000
 
-        if self.is_connected() and close_time > open_time:
+        # Always include actual entry & exit prices as conservative lower bounds
+        high_max = max(open_price, close_price) if close_price > 0 else open_price
+        low_min = min(open_price, close_price) if close_price > 0 else open_price
+        got_ticks = False
+
+        if self.is_connected() and end_msc > start_msc:
             try:
-                from_dt = datetime.fromtimestamp(open_time, tz=UTC)
-                to_dt = datetime.fromtimestamp(close_time, tz=UTC)
-                rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M1, from_dt, to_dt)
-                if rates is not None and len(rates) > 0:
-                    high_max = float(rates["high"].max())
-                    low_min = float(rates["low"].min())
-                    if deal_type == 0:
-                        mfe_price = max(0.0, high_max - open_price)
-                        mae_price = max(0.0, open_price - low_min)
-                    else:
-                        mfe_price = max(0.0, open_price - low_min)
-                        mae_price = max(0.0, high_max - open_price)
+                from_dt = datetime.fromtimestamp(start_msc / 1000.0, tz=UTC)
+                to_dt = datetime.fromtimestamp(end_msc / 1000.0, tz=UTC)
+                ticks = mt5.copy_ticks_range(symbol, from_dt, to_dt, mt5.COPY_TICKS_ALL)
+                if ticks is not None and len(ticks) > 0:
+                    dtype_names = getattr(getattr(ticks, "dtype", None), "names", None)
+                    has_time_msc = bool(dtype_names and "time_msc" in dtype_names)
+                    tick_prices: list[float] = []
+                    for tk in ticks:
+                        if has_time_msc or (isinstance(tk, dict) and "time_msc" in tk):
+                            t_msc = int(tk["time_msc"])
+                        else:
+                            t_msc = int(tk["time"]) * 1000
+                        if t_msc < start_msc or t_msc > end_msc:
+                            continue
+                        if deal_type == 0:
+                            px = float(tk["bid"])
+                        else:
+                            ask_px = float(tk["ask"])
+                            px = ask_px if ask_px > 0 else float(tk["bid"])
+                        if px > 0:
+                            tick_prices.append(px)
+                    if tick_prices:
+                        high_max = max(high_max, max(tick_prices))
+                        low_min = min(low_min, min(tick_prices))
+                        got_ticks = True
             except Exception as exc:
-                logger.warning("Error fetching M1 excursion rates for %s: %s", symbol, exc)
+                logger.warning("Error fetching tick excursions for %s: %s", symbol, exc)
 
-        if mae_price <= 0.0 and mfe_price <= 0.0:
-            price_move = abs(close_price - open_price)
-            if net_profit > 0:
-                mfe_price = price_move * self._rng.uniform(1.05, 1.35)
-                mae_price = price_move * self._rng.uniform(0.15, 0.45)
-            else:
-                mae_price = price_move * self._rng.uniform(1.0, 1.25)
-                mfe_price = price_move * self._rng.uniform(0.05, 0.35)
+        if not got_ticks and self.is_connected() and close_time > open_time:
+            try:
+                # Strictly interior M1 bars: exclude the opening minute (may contain
+                # pre-entry price action) and closing minute (may contain post-exit action).
+                interior_start = ((int(open_time) // 60) + 1) * 60
+                interior_end = ((int(close_time) // 60) - 1) * 60
+                if interior_end >= interior_start:
+                    from_dt = datetime.fromtimestamp(interior_start, tz=UTC)
+                    to_dt = datetime.fromtimestamp(interior_end + 60, tz=UTC)
+                    rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M1, from_dt, to_dt)
+                    if rates is not None and len(rates) > 0:
+                        for bar in rates:
+                            bar_ts = int(bar["time"])
+                            if interior_start <= bar_ts <= interior_end:
+                                bar_h = float(bar["high"])
+                                bar_l = float(bar["low"])
+                                if bar_h > 0:
+                                    high_max = max(high_max, bar_h)
+                                if bar_l > 0:
+                                    low_min = min(low_min, bar_l)
+            except Exception as exc:
+                logger.warning("Error fetching interior M1 excursion rates for %s: %s", symbol, exc)
+
+        if deal_type == 0:
+            mfe_price = max(0.0, high_max - open_price)
+            mae_price = max(0.0, open_price - low_min)
+        else:
+            mfe_price = max(0.0, open_price - low_min)
+            mae_price = max(0.0, high_max - open_price)
 
         pip_size = get_pip_size(symbol, open_price)
         mae_pips = round(mae_price / pip_size, 1)
@@ -295,14 +358,17 @@ class LiveMT5Gateway:
                 pos_type = int(d_in.type)
                 open_price_val = float(d_in.price)
                 open_time_val = int(d_in.time)
+                open_time_msc_val = int(getattr(d_in, "time_msc", 0) or open_time_val * 1000)
             elif d.entry in (1, 2):
                 pos_type = 0 if d.type == 1 else 1
                 open_price_val = float(d.price)
                 open_time_val = int(d.time)
+                open_time_msc_val = int(getattr(d, "time_msc", 0) or open_time_val * 1000)
             else:
                 pos_type = int(d.type)
                 open_price_val = float(d.price)
                 open_time_val = int(d.time)
+                open_time_msc_val = int(getattr(d, "time_msc", 0) or open_time_val * 1000)
 
             sl_val, tp_val = _recover_sl_tp(orders_by_pid.get(pid, []), d.comment or "")
 
@@ -326,6 +392,8 @@ class LiveMT5Gateway:
                         close_price=float(d.price),
                         net_profit=net_profit,
                         volume=float(d.volume),
+                        open_time_msc=open_time_msc_val,
+                        close_time_msc=int(getattr(d, "time_msc", 0) or int(d.time) * 1000),
                     )
                 )
 

@@ -120,6 +120,7 @@ def get_portfolio(
             t["entry_grade"] = note_obj.get("entry_grade", "")
             t["execution_grade"] = note_obj.get("execution_grade", "")
             t["management_grade"] = note_obj.get("management_grade", "")
+            t["initial_sl"] = note_obj.get("initial_sl")
         else:
             t["note"] = ""
             t["setup_tag"] = ""
@@ -128,6 +129,7 @@ def get_portfolio(
             t["entry_grade"] = ""
             t["execution_grade"] = ""
             t["management_grade"] = ""
+            t["initial_sl"] = None
 
     return {
         "account": account_info,

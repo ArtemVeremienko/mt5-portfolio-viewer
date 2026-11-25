@@ -20,8 +20,10 @@ vi.mock('../api/tags', () => ({
   deleteTag: vi.fn(async () => undefined),
 }));
 
+const saveTradeNoteSpy = vi.fn(async (_payload: unknown) => ({ status: 'ok' }));
+
 vi.mock('../api/trades', () => ({
-  saveTradeNote: vi.fn(async () => undefined),
+  saveTradeNote: (payload: unknown) => saveTradeNoteSpy(payload),
   getTradeCandles: vi.fn(async () => ({ ticket: 1, h1: [], m5: [], m1: [], cached: true, mt5_connected: false })),
 }));
 
@@ -85,6 +87,7 @@ describe('TradesTable modern web interactions', () => {
     document.body.appendChild(container);
     localStorage.clear();
     updateTagSpy.mockClear();
+    saveTradeNoteSpy.mockClear();
   });
 
   afterEach(() => {
@@ -218,5 +221,56 @@ describe('TradesTable modern web interactions', () => {
     await Promise.resolve();
     expect(closeSpy).toHaveBeenCalledTimes(1);
     expect(container.querySelector('dialog')).toBeNull();
+  });
+
+  it('validates Initial SL override in the journal modal and submits initial_sl on save', async () => {
+    installDialogPolyfill();
+    dispose = render(
+      () => (
+        <TradesTable
+          openTrades={[]}
+          closedTrades={[makeTrade({ open_price: 1.1, sl: 1.098, sl_diff_pts: 0.002, risk_r: 100, risk_source: 'sl' })]}
+          mode="currency"
+        />
+      ),
+      container
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const reviewBtn = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Log'
+    ) as HTMLButtonElement;
+    reviewBtn.click();
+    await Promise.resolve();
+
+    const dialog = container.querySelector('dialog') as HTMLDialogElement;
+    const slInput = dialog.querySelector('#initial-sl-input') as HTMLInputElement;
+    const saveBtn = Array.from(dialog.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Save Note'
+    ) as HTMLButtonElement;
+
+    // Wrong-side SL for BUY (above open_price 1.1) -> shows error & disables Save
+    slInput.value = '1.105';
+    slInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await Promise.resolve();
+    expect(dialog.textContent).toContain('must be below entry');
+    expect(saveBtn.disabled).toBe(true);
+
+    // Valid wider SL (1.096 = 2x risk) -> enables Save and submits initial_sl
+    slInput.value = '1.096';
+    slInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await Promise.resolve();
+    expect(saveBtn.disabled).toBe(false);
+    expect(dialog.textContent).toContain('Est. 1R: $200.00');
+
+    saveBtn.click();
+    await Promise.resolve();
+    expect(saveTradeNoteSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ticket: 4242,
+        initial_sl: 1.096,
+      })
+    );
   });
 });

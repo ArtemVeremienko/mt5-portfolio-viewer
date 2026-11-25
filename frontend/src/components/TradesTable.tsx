@@ -190,6 +190,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
   const [entryGrade, setEntryGrade] = createSignal<TradeGrade>('');
   const [executionGrade, setExecutionGrade] = createSignal<TradeGrade>('');
   const [managementGrade, setManagementGrade] = createSignal<TradeGrade>('');
+  const [initialSlInput, setInitialSlInput] = createSignal('');
   const [savingNote, setSavingNote] = createSignal(false);
   const [visibleColumns, setVisibleColumns] = createSignal<HistoryColumnKey[]>(
     getStorageItem(VISIBLE_COLUMNS_STORAGE_KEY, DEFAULT_VISIBLE_COLUMNS, isValidColumnList)
@@ -393,11 +394,61 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
     setEntryGrade(t.entry_grade || '');
     setExecutionGrade(t.execution_grade || '');
     setManagementGrade(t.management_grade || '');
+    setInitialSlInput(t.initial_sl != null && t.initial_sl > 0 ? String(t.initial_sl) : '');
   };
+
+  const initialSlValidation = createMemo(() => {
+    const t = editingTrade();
+    const raw = initialSlInput().trim();
+    if (!t || !raw) {
+      return { value: null as number | null, error: null as string | null };
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return { value: null, error: 'Enter a valid positive price.' };
+    }
+    const entry = t.open_price || t.price;
+    if (entry > 0) {
+      if (t.type === 0 && parsed >= entry - 1e-5) {
+        return { value: null, error: `Initial SL must be below entry (${entry}) for BUY.` };
+      }
+      if (t.type === 1 && parsed <= entry + 1e-5) {
+        return { value: null, error: `Initial SL must be above entry (${entry}) for SELL.` };
+      }
+    }
+    return { value: parsed, error: null };
+  });
+
+  const initialSlPreview = createMemo(() => {
+    const t = editingTrade();
+    const { value, error } = initialSlValidation();
+    if (!t || error || value === null) return null;
+    const entry = t.open_price || t.price;
+    if (entry <= 0) return null;
+    const newDiff = Math.abs(entry - value);
+    if (newDiff <= 1e-6) return null;
+
+    let valPerPoint = 0;
+    if (t.sl_diff_pts && t.sl_diff_pts > 1e-6 && t.risk_r > 0) {
+      valPerPoint = t.risk_r / t.sl_diff_pts;
+    } else {
+      const closeDiff = Math.abs(t.price - entry);
+      const net = getNetProfit(t);
+      if (closeDiff > 1e-6 && Math.abs(net) > 1e-4) {
+        valPerPoint = Math.abs(net) / closeDiff;
+      }
+    }
+    if (valPerPoint <= 0) return null;
+    const est1r = Math.max(0.01, newDiff * valPerPoint);
+    const estR = getNetProfit(t) / est1r;
+    return { est1r, estR, pts: newDiff };
+  });
 
   const saveNote = async () => {
     const t = editingTrade();
     if (!t) return;
+    const { value: parsedInitialSl, error: slError } = initialSlValidation();
+    if (slError) return;
     setSavingNote(true);
     try {
       await saveTradeNote({
@@ -410,6 +461,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
         entry_grade: entryGrade(),
         execution_grade: executionGrade(),
         management_grade: managementGrade(),
+        initial_sl: parsedInitialSl,
       });
       setEditingTrade(null);
       await fetchReviewTags();
@@ -965,7 +1017,19 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                         <td class="py-2 px-2 text-slate-300 font-mono">{t.price}</td>
                       </Show>
                       <Show when={isColVisible('sl')}>
-                        <td class="py-2 px-2 text-slate-400 font-mono">{t.sl > 0 ? t.sl : '—'}</td>
+                        <td class="py-2 px-2 font-mono">
+                          <Show
+                            when={t.initial_sl != null && t.initial_sl > 0}
+                            fallback={<span class="text-slate-400">{t.sl > 0 ? t.sl : '—'}</span>}
+                          >
+                            <span
+                              class="text-amber-300"
+                              title={`Manual Initial SL: ${t.initial_sl} (MT5 Final SL: ${t.sl > 0 ? t.sl : 'None'})`}
+                            >
+                              {t.initial_sl}
+                            </span>
+                          </Show>
+                        </td>
                       </Show>
                       <Show when={isColVisible('tp')}>
                         <td class="py-2 px-2 text-slate-400 font-mono">{t.tp > 0 ? t.tp : '—'}</td>
@@ -1009,17 +1073,22 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                         <td class="py-2 px-2 text-right font-bold">
                           <span
                             title={
-                              t.risk_source === 'sl'
-                                ? `1R = $${(t.risk_r || 0.20).toFixed(2)} (Initial SL: ${t.sl_diff_pts || '—'} pts)`
-                                : `1R = $${(t.risk_r || 0.20).toFixed(2)} (1% Account Risk Model)`
+                              t.risk_source === 'manual_sl'
+                                ? `1R = $${(t.risk_r || 0.20).toFixed(2)} (Manual Initial SL: ${t.initial_sl}, ${t.sl_diff_pts || '—'} pts)`
+                                : t.risk_source === 'sl'
+                                  ? `1R = $${(t.risk_r || 0.20).toFixed(2)} (MT5 SL: ${t.sl_diff_pts || '—'} pts)`
+                                  : `1R = $${(t.risk_r || 0.20).toFixed(2)} (1% Account Risk Model)`
                             }
-                            class={`px-2 py-0.5 rounded text-xs font-mono cursor-help ${
+                            class={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono cursor-help ${
                               t.r_multiple > 0
                                 ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
                                 : (t.r_multiple < 0 ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30' : 'text-slate-400')
                             }`}
                           >
-                            {t.r_multiple > 0 ? `+${t.r_multiple.toFixed(2)}R` : `${t.r_multiple.toFixed(2)}R`}
+                            <Show when={t.risk_source === 'manual_sl'}>
+                              <span class="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                            </Show>
+                            <span>{t.r_multiple > 0 ? `+${t.r_multiple.toFixed(2)}R` : `${t.r_multiple.toFixed(2)}R`}</span>
                           </span>
                         </td>
                       </Show>
@@ -1452,6 +1521,54 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                   <TradeChartGrid trade={t()} />
                 </div>
                 <div class="lg:col-span-4 space-y-3 text-xs">
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-2">
+                  <div class="flex items-center justify-between">
+                    <label for="initial-sl-input" class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Initial Stop Loss (1R)
+                    </label>
+                    <Show when={initialSlInput().trim().length > 0}>
+                      <button
+                        type="button"
+                        onClick={() => setInitialSlInput('')}
+                        class="text-[10px] text-amber-400 hover:text-amber-300"
+                      >
+                        Reset to MT5 SL
+                      </button>
+                    </Show>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <input
+                      id="initial-sl-input"
+                      type="number"
+                      step="any"
+                      placeholder={t().sl > 0 ? `MT5 final SL: ${t().sl}` : 'Enter initial SL price...'}
+                      value={initialSlInput()}
+                      onInput={(e) => setInitialSlInput(e.currentTarget.value)}
+                      class={`flex-1 bg-slate-900 border rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs focus:outline-none ${
+                        initialSlValidation().error
+                          ? 'border-rose-500 focus:border-rose-400'
+                          : 'border-slate-800 focus:border-amber-500'
+                      }`}
+                    />
+                  </div>
+                  <Show when={initialSlValidation().error}>
+                    {(err) => <p class="text-[10px] text-rose-400">{err()}</p>}
+                  </Show>
+                  <Show
+                    when={initialSlPreview()}
+                    fallback={
+                      <p class="text-[10px] text-slate-500 font-mono">
+                        Current 1R: ${(t().risk_r || 0).toFixed(2)} ({t().risk_source === 'manual_sl' ? 'Manual SL' : t().risk_source === 'sl' ? `MT5 SL ${t().sl}` : '1% Model'})
+                      </p>
+                    }
+                  >
+                    {(prev) => (
+                      <p class="text-[10px] text-amber-300 font-mono">
+                        Est. 1R: ${prev().est1r.toFixed(2)} • Est. R: {prev().estR >= 0 ? '+' : ''}{prev().estR.toFixed(2)}R
+                      </p>
+                    )}
+                  </Show>
+                </div>
                 <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-2.5">
                   <div class="flex items-center justify-between">
                     <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Trade Grading</span>
@@ -1807,7 +1924,7 @@ export const TradesTable: Component<TradesTableProps> = (props) => {
                 <button
                   type="button"
                   onClick={saveNote}
-                  disabled={savingNote()}
+                  disabled={savingNote() || Boolean(initialSlValidation().error)}
                   class="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold disabled:opacity-50"
                 >
                   {savingNote() ? 'Saving...' : 'Save Note'}

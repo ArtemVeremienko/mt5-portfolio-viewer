@@ -6,6 +6,17 @@ from typing import Any
 ProfitCalcFn = Callable[[int, str, float, float, float], float | None]
 
 
+def is_valid_losing_sl(pos_type: int, open_price: float, sl: float) -> bool:
+    """Return True if sl is strictly on the losing side of open_price."""
+    if sl <= 0 or open_price <= 0:
+        return False
+    if pos_type == 0:
+        return sl < open_price - 1e-5
+    if pos_type == 1:
+        return sl > open_price + 1e-5
+    return False
+
+
 def compute_1r_risk(
     deal: Mapping[str, Any],
     balance_at_entry: float,
@@ -26,15 +37,8 @@ def compute_1r_risk(
     pos_type = int(deal.get("type", 0) or 0)
     volume = float(deal.get("volume", 0.01) or 0.01)
 
-    is_valid_initial_sl = False
-    diff = 0.0
-    if sl > 0 and open_price > 0:
-        if pos_type == 0 and sl < open_price - 1e-5:
-            is_valid_initial_sl = True
-            diff = open_price - sl
-        elif pos_type == 1 and sl > open_price + 1e-5:
-            is_valid_initial_sl = True
-            diff = sl - open_price
+    is_valid_initial_sl = is_valid_losing_sl(pos_type, open_price, sl)
+    diff = abs(open_price - sl) if is_valid_initial_sl else 0.0
 
     existing_risk = deal.get("risk_r", 0.0)
     if is_valid_initial_sl and existing_risk and float(existing_risk) > 0.01:

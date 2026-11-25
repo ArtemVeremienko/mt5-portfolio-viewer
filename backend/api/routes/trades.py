@@ -14,6 +14,7 @@ from backend.api.schemas import (
     TradeNotePayload,
 )
 from backend.domain.protocols import TradingGateway
+from backend.domain.risk import compute_1r_risk, is_valid_losing_sl
 from backend.infrastructure.db.uow import SqliteUnitOfWork
 from backend.services.candle_service import get_or_fetch_trade_candles
 
@@ -31,8 +32,41 @@ def get_open_trades(
 def save_trade_note(
     payload: TradeNotePayload,
     db_path: Annotated[Path, Depends(get_db_path)],
+    gateway: Annotated[TradingGateway, Depends(get_mt5_gateway)],
 ) -> StatusResponse:
+    clean_initial_sl: float | None = (
+        round(float(payload.initial_sl), 5)
+        if payload.initial_sl is not None and payload.initial_sl > 0
+        else None
+    )
+    computed_initial_risk_r: float | None = None
+
     with SqliteUnitOfWork(db_path) as uow:
+        if clean_initial_sl is not None:
+            deal = uow.deals.get_by_ticket(payload.ticket)
+            if deal is not None:
+                pos_type = int(deal.get("type", 0) or 0)
+                open_price = float(deal.get("open_price", 0.0) or deal.get("price", 0.0) or 0.0)
+                if open_price > 0 and not is_valid_losing_sl(pos_type, open_price, clean_initial_sl):
+                    side_hint = "below" if pos_type == 0 else "above"
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"Initial SL ({clean_initial_sl}) must be strictly {side_hint} "
+                            f"entry price ({open_price})."
+                        ),
+                    )
+                risk_deal = {
+                    **deal,
+                    "sl": clean_initial_sl,
+                    "risk_r": 0.0,
+                }
+                computed_initial_risk_r = compute_1r_risk(
+                    risk_deal,
+                    balance_at_entry=100.0,
+                    profit_calc_fn=gateway.calculate_order_profit,
+                )
+
         uow.journal.upsert_note(
             ticket=payload.ticket,
             account_id=payload.account_id,
@@ -43,6 +77,8 @@ def save_trade_note(
             entry_grade=payload.entry_grade,
             execution_grade=payload.execution_grade,
             management_grade=payload.management_grade,
+            initial_sl=clean_initial_sl,
+            initial_risk_r=computed_initial_risk_r,
             updated_at=int(time.time()),
         )
     return StatusResponse(status="ok")

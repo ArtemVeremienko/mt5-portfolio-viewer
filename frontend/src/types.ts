@@ -307,8 +307,9 @@ export interface TradeDeal {
   mfe_pips?: number;
   mae_r?: number;
   mfe_r?: number;
-  risk_source?: 'sl' | 'balance_pct';
+  risk_source?: 'sl' | 'manual_sl' | 'balance_pct';
   sl_diff_pts?: number;
+  initial_sl?: number | null;
   note?: string;
   setup_tag?: string;
   mistake_tag?: string;

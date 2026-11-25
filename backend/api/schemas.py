@@ -15,6 +15,7 @@ class TradeNotePayload(BaseModel):
     entry_grade: str = ""
     execution_grade: str = ""
     management_grade: str = ""
+    initial_sl: float | None = Field(default=None, ge=0.0)
 
 
 class CreateTagPayload(BaseModel):
